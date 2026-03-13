@@ -1,0 +1,64 @@
+--- EXTRACTED TEXT ---
+Grupo A4 / A4 - Verde / Poder Público / Poder Publico Federal TRIFÁSICO
+31/12/2024 31/01/2025 31 28/02/2025
+UNIVERSIDADE FEDERAL DO RIO DE
+JANEIRO 400103438
+AV VINTE DE JANEIRO SN
+GALEAO - RIO DE JANEIRO, RJ NOTA FISCAL Nº 0613610 - SÉRIE 03 / DATA DE
+CEP 21941-570 0020007122 EMISSÃO: 04/02/2025
+Consulte pela Chave de Acesso em:
+CNPJ 33.663.683/0001-16
+https://dfe-portal.svrs.rs.gov.br/NF3E/Consulta
+Conta Contrato: 70000007581 Chave de acesso:
+33250260444437000146660030006136101060979680
+Protocolo de autorização: 3332500007477509 - 04/02/2025 às 10:16:49
+JAN/2025 10/03/2025 R$30.329,39
+Com base na determinação da SEFAZ-RJ, através da Consulta Tributária 042/22, foi retomada a partir de 07/02/23 a cobrança dos adicionais de ICMS relacionados ao FECP,
+previstos na Lei Estadual nº 4.056/22. Valores de FECP retroativo de R$ 215,41 e de juros SELIC de R$ 42,13.
+Itens de fatura Unid. Quant. P C re o ç m o t u r n ib it u ( t R os $) Valor (R$) COF P I I N S S / (R$) IC B M as S e C (R al $ c. ) I A C l M íq S u o (% ta ) IC (R M $ S ) Un T i a t. r i ( f R a $) Tributo Base ( R de $ ) Calc.Alí ( q % uo ) ta Valor (R$)
+Demanda Ativa kW HFP/Único kW 98 28,61378799 2.804,15 156,19 27,02000 PIS/PASEP 30.162,35 0,99% 298,60
+Energia Ativa kWh HFP/Único kWh 39.204 0,52088319 20.420,70 1137,43 0,49187 COFINS 30.162,35 4,58% 1.381,44
+Energia Ativa kWh HP kWh 4.053 1,70827068 6.923,61 385,64 1,61312
+Energia Reativa kWh HFP/Único kWh 36 0,38590490 13,89 0,78 0,36441
+Juros mora 1%am: 6 dia(s) sobre R$32402,71 64,80
+DÉBITO VAR IPCA 2,95
+DÉBITO VAR IPCA 28,90 Demanda 98,00
+Contrib Ilum Pública Municipal 1.124,95
+Cobrança adicional de FECP 2023/02 257,54
+Imposto Retido IRPJ - Demanda -182,71
+Imposto Retido PIS - Demanda -24,74
+Imposto Retido COFINS -Demanda -114,18
+Imposto Retido CSLL - Demanda -38,06
+Imposto Retido IRPJ - Energia -328,30
+Imposto Retido PIS - Energia -177,83
+Imposto Retido COFINS -Energia -820,75
+Imposto Retido CSLL - Energia -273,58
+Multa 2% conta de 11/2024 sobre R$ 32.402,71 648,05
+TOTAL 1.680,04 0,00 0,00
+Medidor Grandezas Postos Leitura Leitura Const Consumo
+horários Anterior Atual Medidor kWh
+9245187 Energia Ativa-Kwh Ponta 402.704 413.963 0,3600 4.053 ICMS DISP. DEC 43903/12 R$ -9.524,95 |||
+9245187 Energia Ativa-Kwh Fora Ponta 38.861 39.950 36,0000 39.204 ISENÇÃO ICMS ART 2º DEC.43903/12
+9245187 Demanda Ativa-Kw Único 2.434 2.493 1,4237 84
+9245187 Energia Reativa-Kwh Ponta 671 671 1,0000 0
+9245187 Energia Reativa-Kwh Fora Ponta 120 121 36,0000 36
+9245187 Demanda Reativa -Kw Único 8.320 8.535 0,3581 77
+Consumo Fora Ponta DEZ/24 41.040 NOV/24 41.760 OUT/24 41.904 SET/24 41.652 AGO/24 35.388 JUL/24 34.416 JUN/24 38.952 MAI/24 45.216 ABR/24 44.100 MAR/24 45.216 FEV/24 39.564 JAN/24 38.520 DEZ/23 41.328
+Consumo Ponta DEZ/24 3.911 NOV/24 3.934 OUT/24 4.583 SET/24 4.407 AGO/24 4.002 JUL/24 4.182 JUN/24 4.091 MAI/24 4.471 ABR/24 4.645 MAR/24 4.218 FEV/24 3.923 JAN/24 3.767 DEZ/23 3.740
+Demanda Fora Ponta DEZ/24 98 NOV/24 105 OUT/24 99 SET/24 100 AGO/24 98 JUL/24 98 JUN/24 98 MAI/24 105 ABR/24 102 MAR/24 103 FEV/24 98 JAN/24 98 DEZ/23 98
+Demanda Ponta DEZ/24 0 NOV/24 0 OUT/24 0 SET/24 0 AGO/24 0 JUL/24 0 JUN/24 0 MAI/24 0 ABR/24 0 MAR/24 0 FEV/24 0 JAN/24 0 DEZ/23 0
+Consumo Reativo Fora Ponta DEZ/24 36 NOV/24 0 OUT/24 0 SET/24 0 AGO/24 0 JUL/24 0 JUN/24 0 MAI/24 0 ABR/24 0 MAR/24 0 FEV/24 0 JAN/24 36 DEZ/23 108
+Consumo Reativo Ponta DEZ/24 2 NOV/24 0 OUT/24 0 SET/24 0 AGO/24 0 JUL/24 0 JUN/24 0 MAI/24 0 ABR/24 0 MAR/24 0 FEV/24 0 JAN/24 0 DEZ/23 3
+Demanda Reativa Fora Ponta DEZ/24 0 NOV/24 0 OUT/24 0 SET/24 0 AGO/24 0 JUL/24 0 JUN/24 0 MAI/24 0 ABR/24 0 MAR/24 0 FEV/24 0 JAN/24 0 DEZ/23 0
+Demanda Reativa Ponta DEZ/24 0 NOV/24 0 OUT/24 0 SET/24 0 AGO/24 0 JUL/24 0 JUN/24 0 MAI/24 0 ABR/24 0 MAR/24 0 FEV/24 0 JAN/24 0 DEZ/23 0
+*****30.162,35 -1.960,15 10/03/2025 30.329,39
+00000.0000000000.00000000000.000000000000000000000
+PAGÁVEL PREFERENCIALMENTE NO 10/03/2025
+109 0,00
+UNIVERSIDADE FEDERAL DO RIO DE JANEIRO
+AV VINTE DE JANEIRO SN
+0,00
+Fatura 01 Residência Estudantil (5140657) SEI 23079.204694/2025-19 / pg. 1
+
+--- EXTRACTED TABLES ---
+Number of tables: 0

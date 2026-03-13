@@ -3,3 +3,6 @@ uvicorn
 python-multipart
 pdfplumber
 pydantic
+sqlalchemy
+psycopg2-binary
+python-dotenv

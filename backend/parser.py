@@ -1,6 +1,6 @@
 import pdfplumber
 import re
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 def parse_moeda(val_str: str) -> float:
     if not val_str: return 0.0
@@ -26,40 +26,12 @@ def format_moeda(val_num: float) -> str:
 
 def parse_pdf(pdf_path: str) -> Dict[str, Any]:
     """Extrai os dados da conta de luz usando pdfplumber."""
-    data = {
+    data: Dict[str, Any] = {
         "conta_contrato": None,
         "mes_referencia": None,
         "vencimento": None,
         "valor_total": None,
-
-        "demanda_ativa_quant": None,
-        "demanda_ativa_preco": None,
-        "demanda_ativa_valor": None,
-
-        "energia_ativa_ponta_quant": None,
-        "energia_ativa_ponta_preco": None,
-        "energia_ativa_ponta_valor": None,
-
-        "energia_ativa_fora_ponta_quant": None,
-        "energia_ativa_fora_ponta_preco": None,
-        "energia_ativa_fora_ponta_valor": None,
-
-        "energia_reativa_quant": None,
-        "energia_reativa_preco": None,
-        "energia_reativa_valor": None,
-
-        "imposto_retido_irpj_demanda": None,
-        "imposto_retido_pis_demanda": None,
-        "imposto_retido_cofins_demanda": None,
-        "imposto_retido_csll_demanda": None,
-
-        "imposto_retido_irpj_energia": None,
-        "imposto_retido_pis_energia": None,
-        "imposto_retido_cofins_energia": None,
-        "imposto_retido_csll_energia": None,
-        
-        "contrib_ilum_publica": None,
-        "multas_e_juros": None,
+        "itens": [] # Nova lista dinâmica One-to-Many
     }
     
     try:
@@ -79,51 +51,53 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
             data["mes_referencia"] = val_match.group(1)
             data["vencimento"] = val_match.group(2)
             data["valor_total"] = val_match.group(3)
+
+        # Helper method for adding items
+        def add_item(desc, quant=None, preco=None, valor=None):
+            if valor is not None:
+                data["itens"].append({
+                    "descricao": desc,
+                    "quantidade": quant,
+                    "preco_unitario": preco,
+                    "valor": valor
+                })
             
         # 3. Demanda Ativa
         demanda_match = re.search(r"Demanda Ativa\s+kW\s+HFP/Único\s+kW\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
         if demanda_match:
-            data["demanda_ativa_quant"] = demanda_match.group(1)
-            data["demanda_ativa_preco"] = demanda_match.group(2)
-            data["demanda_ativa_valor"] = demanda_match.group(3)
+            add_item("Demanda Ativa", demanda_match.group(1), demanda_match.group(2), demanda_match.group(3))
             
         # 4. Energia Ativa - Fora Ponta
         energia_hfp_match = re.search(r"Energia Ativa\s+kWh\s+HFP/Único\s+kWh\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
         if energia_hfp_match:
-            data["energia_ativa_fora_ponta_quant"] = energia_hfp_match.group(1)
-            data["energia_ativa_fora_ponta_preco"] = energia_hfp_match.group(2)
-            data["energia_ativa_fora_ponta_valor"] = energia_hfp_match.group(3)
+             add_item("Energia Ativa Fora Ponta", energia_hfp_match.group(1), energia_hfp_match.group(2), energia_hfp_match.group(3))
             
         # 5. Energia Ativa - Ponta
         energia_hp_match = re.search(r"Energia Ativa\s+kWh\s+HP\s+kWh\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
         if energia_hp_match:
-            data["energia_ativa_ponta_quant"] = energia_hp_match.group(1)
-            data["energia_ativa_ponta_preco"] = energia_hp_match.group(2)
-            data["energia_ativa_ponta_valor"] = energia_hp_match.group(3)
+             add_item("Energia Ativa Ponta", energia_hp_match.group(1), energia_hp_match.group(2), energia_hp_match.group(3))
             
         # 6. Energia Reativa
         energia_reativa_match = re.search(r"Energia Reativa\s+kWh\s+HFP/Único\s+kWh\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
         if energia_reativa_match:
-            data["energia_reativa_quant"] = energia_reativa_match.group(1)
-            data["energia_reativa_preco"] = energia_reativa_match.group(2)
-            data["energia_reativa_valor"] = energia_reativa_match.group(3)
+            add_item("Energia Reativa", energia_reativa_match.group(1), energia_reativa_match.group(2), energia_reativa_match.group(3))
 
-        # 7. Impostos Retidos - Demanda
+        # 7. Impostos Retidos
         impostos = {
-            "imposto_retido_irpj_demanda": r"Imposto Retido IRPJ - Demanda\s+([-\d.,]+)",
-            "imposto_retido_pis_demanda": r"Imposto Retido PIS - Demanda\s+([-\d.,]+)",
-            "imposto_retido_cofins_demanda": r"Imposto Retido COFINS\s*-?\s*Demanda\s+([-\d.,]+)",
-            "imposto_retido_csll_demanda": r"Imposto Retido CSLL - Demanda\s+([-\d.,]+)",
-            "imposto_retido_irpj_energia": r"Imposto Retido IRPJ - Energia\s+([-\d.,]+)",
-            "imposto_retido_pis_energia": r"Imposto Retido PIS - Energia\s+([-\d.,]+)",
-            "imposto_retido_cofins_energia": r"Imposto Retido COFINS\s*-?\s*Energia\s+([-\d.,]+)",
-            "imposto_retido_csll_energia": r"Imposto Retido CSLL - Energia\s+([-\d.,]+)",
-            "contrib_ilum_publica": r"Contrib Ilum Pública Municipal\s+([\d.,]+)",
+            "Imposto Retido IRPJ (Demanda)": r"Imposto Retido IRPJ - Demanda\s+([-\d.,]+)",
+            "Imposto Retido PIS (Demanda)": r"Imposto Retido PIS - Demanda\s+([-\d.,]+)",
+            "Imposto Retido COFINS (Demanda)": r"Imposto Retido COFINS\s*-?\s*Demanda\s+([-\d.,]+)",
+            "Imposto Retido CSLL (Demanda)": r"Imposto Retido CSLL - Demanda\s+([-\d.,]+)",
+            "Imposto Retido IRPJ (Energia)": r"Imposto Retido IRPJ - Energia\s+([-\d.,]+)",
+            "Imposto Retido PIS (Energia)": r"Imposto Retido PIS - Energia\s+([-\d.,]+)",
+            "Imposto Retido COFINS (Energia)": r"Imposto Retido COFINS\s*-?\s*Energia\s+([-\d.,]+)",
+            "Imposto Retido CSLL (Energia)": r"Imposto Retido CSLL - Energia\s+([-\d.,]+)",
+            "Contribuição Iluminação Pública": r"Contrib Ilum Pública Municipal\s+([\d.,]+)",
         }
-        for k, v in impostos.items():
-            match = re.search(v, text)
+        for desc, regex in impostos.items():
+            match = re.search(regex, text)
             if match:
-                data[k] = match.group(1)
+                add_item(desc, None, None, match.group(1))
                 
         # 8. Multas e Juros
         multas_juros_total = 0.0
@@ -136,7 +110,7 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
             multas_juros_total += parse_moeda(m)
             
         if multas_juros_total > 0:
-            data["multas_e_juros"] = format_moeda(multas_juros_total)
+            add_item("Multas e Juros", None, None, format_moeda(multas_juros_total))
             
         return data
         
