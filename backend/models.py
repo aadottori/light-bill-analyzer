@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, Date, ForeignKey
+from sqlalchemy import Column, Integer, String, Numeric, Date, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from backend.database import Base
 from pydantic import BaseModel
@@ -7,60 +7,71 @@ from datetime import date
 
 # --- SQLAlchemy DB Models ---
 
-class Predio(Base):
-    __tablename__ = "predios"
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    role = Column(String, default="viewer") # "admin" or "viewer"
+    is_active = Column(Boolean, default=True)
+
+class Unit(Base):
+    __tablename__ = "units"
 
     id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, index=True)
-    conta_contrato = Column(String, unique=True, index=True)
+    name = Column(String, index=True)
+    installation_code = Column(String, unique=True, index=True)
     
-    faturas = relationship("Fatura", back_populates="predio")
+    bills = relationship("Bill", back_populates="unit")
 
 
-class Fatura(Base):
-    __tablename__ = "faturas"
+class Bill(Base):
+    __tablename__ = "bills"
 
     id = Column(Integer, primary_key=True, index=True)
-    conta_contrato = Column(String, index=True)
-    mes_referencia = Column(String)
-    vencimento = Column(Date, nullable=True)
-    valor_total = Column(Numeric(12, 2))
+    installation_code = Column(String, index=True)
+    contract_account = Column(String, index=True)
+    reference_month = Column(String)
+    due_date = Column(Date, nullable=True)
+    total_amount = Column(Numeric(12, 2))
     
-    predio_id = Column(Integer, ForeignKey("predios.id"), nullable=True)
+    unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
     
-    predio = relationship("Predio", back_populates="faturas")
-    itens = relationship("FaturaItem", back_populates="fatura", cascade="all, delete")
+    unit = relationship("Unit", back_populates="bills")
+    items = relationship("BillItem", back_populates="bill", cascade="all, delete-orphan")
 
 
-class FaturaItem(Base):
-    __tablename__ = "fatura_itens"
+class BillItem(Base):
+    __tablename__ = "bill_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    fatura_id = Column(Integer, ForeignKey("faturas.id"))
-    descricao = Column(String, index=True)
-    quantidade = Column(Numeric(12, 2), nullable=True)
-    preco_unitario = Column(Numeric(12, 4), nullable=True)
-    valor = Column(Numeric(12, 2))
+    bill_id = Column(Integer, ForeignKey("bills.id"))
+    description = Column(String, index=True)
+    quantity = Column(Numeric(12, 2), nullable=True)
+    unit_price = Column(Numeric(12, 4), nullable=True)
+    amount = Column(Numeric(12, 2))
     
-    fatura = relationship("Fatura", back_populates="itens")
+    bill = relationship("Bill", back_populates="items")
 
 
 # --- Pydantic Schemas for Input Validation ---
 
-class FaturaItemCreate(BaseModel):
-    descricao: str
-    quantidade: Optional[str] = None
-    preco_unitario: Optional[str] = None
-    valor: str
+class BillItemCreate(BaseModel):
+    description: str
+    quantity: Optional[str] = None
+    unit_price: Optional[str] = None
+    amount: str
 
-class FaturaCreate(BaseModel):
-    conta_contrato: Optional[str] = None
-    mes_referencia: Optional[str] = None
-    vencimento: Optional[str] = None
-    valor_total: Optional[str] = None
-    predio_id: Optional[int] = None
-    itens: List[FaturaItemCreate] = []
+class BillCreate(BaseModel):
+    installation_code: Optional[str] = None
+    contract_account: Optional[str] = None
+    reference_month: Optional[str] = None
+    due_date: Optional[str] = None
+    total_amount: Optional[str] = None
+    unit_id: Optional[int] = None
+    items: List[BillItemCreate] = []
 
-class PredioCreate(BaseModel):
-    nome: str
-    conta_contrato: str
+class UnitCreate(BaseModel):
+    name: str
+    installation_code: str

@@ -27,11 +27,12 @@ def format_moeda(val_num: float) -> str:
 def parse_pdf(pdf_path: str) -> Dict[str, Any]:
     """Extrai os dados da conta de luz usando pdfplumber."""
     data: Dict[str, Any] = {
-        "conta_contrato": None,
-        "mes_referencia": None,
-        "vencimento": None,
-        "valor_total": None,
-        "itens": [] # Nova lista dinâmica One-to-Many
+        "installation_code": None,
+        "contract_account": None,
+        "reference_month": None,
+        "due_date": None,
+        "total_amount": None,
+        "items": [] # Nova lista dinâmica One-to-Many
     }
     
     try:
@@ -43,23 +44,34 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
         # 1. Conta Contrato
         cc_match = re.search(r"Conta Contrato:\s*(\d+)", text, re.IGNORECASE)
         if cc_match:
-            data["conta_contrato"] = cc_match.group(1)
+            data["contract_account"] = cc_match.group(1)
+            
+        # 1b. Código da Instalação (Instalações da Light costumam ser 9 dígitos ou marcadas com 'Instalação')
+        # O usuário notou que 10 dígitos perto do CEP é o 'Código do Cliente' e não a 'Instalação'.
+        inst_explicit = re.search(r"Instala[çc][ãa]o\s*[:\-]?\s*(\d{9,10})", text, re.IGNORECASE)
+        if inst_explicit:
+            data["installation_code"] = inst_explicit.group(1)
+        else:
+            # Fallback: procura o primeiro número de exatos 9 dígitos isolado na parte superior do PDF
+            inst_implicit = re.search(r"(?<![\d/.-])(\d{9})(?![\d/.-])", text[:1000])
+            if inst_implicit:
+                data["installation_code"] = inst_implicit.group(1)
             
         # 2. Mes de referência, Vencimento e Valor Total
         val_match = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$([\d.,]+)", text)
         if val_match:
-            data["mes_referencia"] = val_match.group(1)
-            data["vencimento"] = val_match.group(2)
-            data["valor_total"] = val_match.group(3)
+            data["reference_month"] = val_match.group(1)
+            data["due_date"] = val_match.group(2)
+            data["total_amount"] = val_match.group(3)
 
         # Helper method for adding items
         def add_item(desc, quant=None, preco=None, valor=None):
             if valor is not None:
-                data["itens"].append({
-                    "descricao": desc,
-                    "quantidade": quant,
-                    "preco_unitario": preco,
-                    "valor": valor
+                data["items"].append({
+                    "description": desc,
+                    "quantity": quant,
+                    "unit_price": preco,
+                    "amount": valor
                 })
             
         # 3. Demanda Ativa

@@ -1,63 +1,184 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 
 export default function Dashboard() {
-  const [faturas, setFaturas] = useState([]);
+  const { user } = useAuth();
+  const [bills, setBills] = useState([]);
+  const [units, setUnits] = useState([]);
+  const [availableMonths, setAvailableMonths] = useState([]);
+  const [availableCodes, setAvailableCodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetch("http://localhost:8000/faturas")
+  // Filters state
+  const [filterMonth, setFilterMonth] = useState("");
+  const [filterCode, setFilterCode] = useState("");
+  const [filterUnit, setFilterUnit] = useState("");
+  const [sortAmount, setSortAmount] = useState("");
+
+  const fetchBills = useCallback(() => {
+    if (!user) return;
+    setLoading(true);
+    let url = new URL("http://localhost:8000/bills");
+    if (filterMonth) url.searchParams.append("reference_month", filterMonth);
+    if (filterCode) url.searchParams.append("installation_code", filterCode);
+    if (filterUnit) url.searchParams.append("unit_id", filterUnit);
+    if (sortAmount) url.searchParams.append("sort_amount", sortAmount);
+
+    fetch(url, {
+      headers: { "Authorization": `Bearer ${user.token}` }
+    })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
-          setFaturas(data.data);
+          setBills(data.data);
         }
       })
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
-  }, []);
+  }, [user, filterMonth, filterCode, filterUnit, sortAmount]);
+
+  const fetchUnits = useCallback(() => {
+    if (!user) return;
+    fetch("http://localhost:8000/units", {
+      headers: { "Authorization": `Bearer ${user.token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) setUnits(data.data);
+      });
+  }, [user]);
+
+  const fetchFilters = useCallback(() => {
+    if (!user) return;
+    fetch("http://localhost:8000/bills/months", { headers: { "Authorization": `Bearer ${user.token}` } })
+      .then(res => res.json())
+      .then(data => data.success && setAvailableMonths(data.data));
+
+    fetch("http://localhost:8000/bills/installations", { headers: { "Authorization": `Bearer ${user.token}` } })
+      .then(res => res.json())
+      .then(data => data.success && setAvailableCodes(data.data));
+  }, [user]);
+
+  useEffect(() => {
+    fetchBills();
+    fetchUnits();
+    fetchFilters();
+  }, [fetchBills, fetchUnits, fetchFilters]);
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this bill and all its items?")) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/bills/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${user.token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchBills();
+      } else {
+        alert("Error deleting bills.");
+      }
+    } catch (e) {
+      alert("Communication failure.");
+    }
+  };
 
   return (
     <div className="dashboard-section">
-      <div className="dashboard-header">
-        <h2>Últimas Faturas Processadas</h2>
-        <button className="btn btn-primary" onClick={() => navigate('/upload')}>
-          + Nova Fatura
-        </button>
+      <div className="dashboard-header" style={{ flexDirection: "column", alignItems: "flex-start", gap: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center" }}>
+          <h2>Latest Processed Bills</h2>
+          {user?.role === 'admin' && (
+            <button className="btn btn-primary" onClick={() => navigate('/upload')}>
+              + New Bill
+            </button>
+          )}
+        </div>
+
+        <div className="filters-bar" style={{ display: "flex", gap: "1rem", flexWrap: "wrap", padding: "1rem", backgroundColor: "#f8fafc", borderRadius: "8px", width: "100%" }}>
+          <div>
+            <label className="data-label">Reference Month</label>
+            <select className="data-input" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
+              <option value="">All months...</option>
+              {availableMonths.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="data-label">Installation Code</label>
+            <select className="data-input" value={filterCode} onChange={e => setFilterCode(e.target.value)}>
+              <option value="">All installations...</option>
+              {availableCodes.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="data-label">Linked Unit</label>
+            <select className="data-input" value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
+              <option value="">All units...</option>
+              {units.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="btn btn-secondary" onClick={() => { setFilterMonth(""); setFilterCode(""); setFilterUnit(""); setSortAmount(""); }}>Clear Filters</button>
+          </div>
+        </div>
       </div>
 
       {loading ? (
-        <p>Carregando histórico...</p>
-      ) : faturas.length === 0 ? (
+        <p>Loading history...</p>
+      ) : bills.length === 0 ? (
         <div className="empty-state">
-          <p>Nenhuma fatura validada ainda.</p>
+          <p>No bills validated yet.</p>
         </div>
       ) : (
         <div className="table-responsive">
           <table className="dashboard-table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Prédio</th>
-                <th>Conta Contrato</th>
-                <th>Mês Referência</th>
-                <th>Vencimento</th>
-                <th>Valor Total (R$)</th>
+                <th>Inst. Code</th>
+                <th>Linked Unit</th>
+                <th>Contract Acc.</th>
+                <th>Ref. Month</th>
+                <th>Due Date</th>
+                <th style={{ cursor: "pointer", color: "var(--primary-color)" }} onClick={() => setSortAmount(sortAmount === "desc" ? "asc" : "desc")}>
+                  Total Amount (R$) {sortAmount === "desc" ? "↓" : sortAmount === "asc" ? "↑" : "↕"}
+                </th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {faturas.map(fat => (
-                <tr key={fat.id}>
-                  <td>#{fat.id}</td>
-                  <td>{fat.predio_nome || 'Não vinculado'}</td>
-                  <td>{fat.conta_contrato}</td>
-                  <td>{fat.mes_referencia}</td>
-                  <td>{fat.vencimento}</td>
+              {bills.map((bill) => (
+                <tr key={bill.id}>
+                  <td>{bill.installation_code || "-"}</td>
                   <td>
-                    {fat.valor_total 
-                      ? fat.valor_total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                    {bill.unit_name || 'Not linked'}
+                  </td>
+                  <td>{bill.contract_account || "-"}</td>
+                  <td>{bill.reference_month}</td>
+                  <td>{bill.due_date}</td>
+                  <td style={{ fontWeight: "600" }}>
+                    {bill.total_amount
+                      ? bill.total_amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                       : '-'}
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <button className="btn btn-secondary btn-small" onClick={() => navigate(`/bill/${bill.id}`)}>Details</button>
+                      {user?.role === 'admin' && (
+                        <>
+                          <button className="btn btn-primary btn-small" onClick={() => navigate(`/bill/${bill.id}/edit`)}>Edit</button>
+                          <button className="btn btn-secondary btn-small" style={{ color: "red", borderColor: "red" }} onClick={() => handleDelete(bill.id)}>Delete</button>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
