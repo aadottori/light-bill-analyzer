@@ -9,6 +9,7 @@ export default function Dashboard() {
   const [availableMonths, setAvailableMonths] = useState([]);
   const [availableCodes, setAvailableCodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingExport, setLoadingExport] = useState(false);
   const navigate = useNavigate();
 
   // Filters state
@@ -86,6 +87,37 @@ export default function Dashboard() {
     }
   };
 
+  const handleExport = async () => {
+    if (!user) return;
+    setLoadingExport(true);
+    let url = new URL("http://localhost:8000/bills/export");
+    if (filterMonth) url.searchParams.append("reference_month", filterMonth);
+    if (filterCode) url.searchParams.append("installation_code", filterCode);
+    if (filterUnit) url.searchParams.append("unit_id", filterUnit);
+    if (sortAmount) url.searchParams.append("sort_amount", sortAmount);
+
+    try {
+      const res = await fetch(url, {
+        headers: { "Authorization": `Bearer ${user.token}` }
+      });
+      if (!res.ok) throw new Error("Export failed");
+      
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = "bills_extract.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      alert("Failed to export Excel file.");
+    } finally {
+      setLoadingExport(false);
+    }
+  };
+
   return (
     <div className="dashboard-section">
       <div className="dashboard-header" style={{ flexDirection: "column", alignItems: "flex-start", gap: "1rem" }}>
@@ -126,8 +158,11 @@ export default function Dashboard() {
               ))}
             </select>
           </div>
-          <div style={{ display: "flex", alignItems: "flex-end" }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "1rem" }}>
             <button className="btn btn-secondary" onClick={() => { setFilterMonth(""); setFilterCode(""); setFilterUnit(""); setSortAmount(""); }}>Clear Filters</button>
+            <button className="btn btn-primary" onClick={handleExport} disabled={loadingExport}>
+              {loadingExport ? "Exporting..." : "Export to Excel"}
+            </button>
           </div>
         </div>
       </div>

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from backend.database import SessionLocal, engine, Base, get_db
@@ -10,6 +11,8 @@ import os
 import shutil
 import uuid
 import re
+import io
+import pandas as pd
 from backend.parser import parse_pdf, parse_moeda
 
 # Criar tabelas no banco de dados
@@ -202,6 +205,81 @@ async def list_bills(
             "unit_name": p_name
         })
     return {"success": True, "data": result}
+    
+@app.get("/bills/export")
+async def export_bills(
+    reference_month: Optional[str] = None,
+    installation_code: Optional[str] = None,
+    unit_id: Optional[int] = None,
+    sort_amount: Optional[str] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(Bill)
+    
+    if reference_month:
+        query = query.filter(Bill.reference_month.ilike(f"%{reference_month.strip()}%"))
+    if installation_code:
+        query = query.filter(Bill.installation_code.ilike(f"%{installation_code.strip()}%"))
+    if unit_id is not None:
+        query = query.filter(Bill.unit_id == unit_id)
+        
+    if sort_amount == "asc":
+        query = query.order_by(Bill.total_amount.asc())
+    elif sort_amount == "desc":
+        query = query.order_by(Bill.total_amount.desc())
+        
+    bills = query.all()
+    
+    data_list = []
+    
+    for f in bills:
+        p_name = ""
+        if f.unit_id:
+            p = db.query(Unit).filter(Unit.id == f.unit_id).first()
+            if p: p_name = p.name
+            
+        row = {
+            "ID": f.id,
+            "Installation Code": f.installation_code,
+            "Contract Account": f.contract_account,
+            "Linked Unit": p_name,
+            "Reference Month": f.reference_month,
+            "Due Date": str(f.due_date) if f.due_date else None,
+            "Total Amount": float(f.total_amount) if f.total_amount else None
+        }
+        
+        # Pivot items into columns
+        for item in f.items:
+            if item.description:
+                col_name = item.description
+                amount_val = float(item.amount) if item.amount else 0.0
+                if col_name in row:
+                    try:
+                        current_val = float(row[col_name]) if row[col_name] is not None else 0.0
+                        row[col_name] = current_val + amount_val
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    row[col_name] = amount_val
+                    
+        data_list.append(row)
+        
+    df = pd.DataFrame(data_list)
+    
+    # Fill empty values with NaN or 0 (for amount columns it makes sense to be empty string or 0. We'll leave as NaN to be visually empty in excel)
+    # df.fillna("", inplace=True) 
+    
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Bills Extract')
+    
+    buffer.seek(0)
+    
+    headers = {
+        'Content-Disposition': 'attachment; filename="bills_extract.xlsx"'
+    }
+    return StreamingResponse(buffer, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers=headers)
     
 @app.get("/bills/{bill_id}")
 async def get_bill_details(bill_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
