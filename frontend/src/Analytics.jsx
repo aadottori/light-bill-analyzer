@@ -8,20 +8,48 @@ export default function Analytics() {
   const [trends, setTrends] = useState([]);
   const [offenders, setOffenders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [availableMonths, setAvailableMonths] = useState([]);
+  const [startMonth, setStartMonth] = useState("");
+  const [endMonth, setEndMonth] = useState("");
+
+  const monthMap = {"JAN": 0, "FEV": 1, "MAR": 2, "ABR": 3, "MAI": 4, "JUN": 5, "JUL": 6, "AGO": 7, "SET": 8, "OUT": 9, "NOV": 10, "DEZ": 11};
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("http://localhost:8000/bills/months", { headers: { "Authorization": `Bearer ${user.token}` } })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+            const sorted = data.data.sort((a,b) => {
+                const [mA, yA] = a.split('/');
+                const [mB, yB] = b.split('/');
+                if (yA !== yB) return yA - yB;
+                return monthMap[mA] - monthMap[mB];
+            });
+            setAvailableMonths(sorted);
+        }
+      });
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
 
+    let queryParams = "";
+    if (startMonth || endMonth) {
+      const params = new URLSearchParams();
+      if (startMonth) params.append("start_month", startMonth);
+      if (endMonth) params.append("end_month", endMonth);
+      queryParams = `?${params.toString()}`;
+    }
+
     Promise.all([
-      fetch("http://localhost:8000/analytics/kpis", { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json()),
-      fetch("http://localhost:8000/analytics/trends", { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json()),
-      fetch("http://localhost:8000/analytics/offenders", { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json())
+      fetch(`http://localhost:8000/analytics/kpis${queryParams}`, { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json()),
+      fetch(`http://localhost:8000/analytics/trends${queryParams}`, { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json()),
+      fetch(`http://localhost:8000/analytics/offenders${queryParams}`, { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json())
     ]).then(([kpiData, trendData, offenderData]) => {
       if (kpiData.success) setKpis(kpiData.data);
       if (trendData.success) {
-         // Sort months roughly. Assuming format "MMM/YYYY" (e.g. JAN/2025)
-         const monthMap = {"JAN": 0, "FEV": 1, "MAR": 2, "ABR": 3, "MAI": 4, "JUN": 5, "JUL": 6, "AGO": 7, "SET": 8, "OUT": 9, "NOV": 10, "DEZ": 11};
          const sorted = trendData.data.sort((a,b) => {
             const [mA, yA] = a.month.split('/');
             const [mB, yB] = b.month.split('/');
@@ -51,9 +79,35 @@ export default function Analytics() {
 
   return (
     <div className="dashboard-section">
-      <div className="dashboard-header">
-        <h2>Energy Analytics & Efficiency</h2>
-        <p className="subtitle" style={{color: "#64748b"}}>Insights across all validated bills</p>
+      <div className="dashboard-header" style={{ flexDirection: "column", alignItems: "flex-start", gap: "1.5rem" }}>
+        <div>
+            <h2>Energy Analytics & Efficiency</h2>
+            <p className="subtitle" style={{color: "#64748b"}}>Insights across all validated bills</p>
+        </div>
+        
+        <div className="filters-bar" style={{ display: "flex", gap: "1rem", flexWrap: "wrap", padding: "1rem", backgroundColor: "#f8fafc", borderRadius: "8px", width: "100%" }}>
+          <div>
+            <label className="data-label">Start Month</label>
+            <select className="data-input" value={startMonth} onChange={e => setStartMonth(e.target.value)}>
+              <option value="">None (Beginning)</option>
+              {availableMonths.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="data-label">End Month</label>
+            <select className="data-input" value={endMonth} onChange={e => setEndMonth(e.target.value)}>
+              <option value="">None (Present)</option>
+              {availableMonths.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="btn btn-secondary" onClick={() => { setStartMonth(""); setEndMonth(""); }}>Clear Filters</button>
+          </div>
+        </div>
       </div>
 
       <div className="data-grid" style={{marginBottom: "3rem", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))"}}>
@@ -62,8 +116,12 @@ export default function Analytics() {
             <h2 style={{margin: 0, color: "#be123c", fontSize: "2rem"}}>{kpis.total_fines.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h2>
          </div>
          <div style={{background: "#f0fdfa", padding: "1.5rem", borderRadius: "12px", border: "1px solid #ccfbf1"}}>
-            <h4 style={{margin: "0 0 0.5rem 0", color: "#0d9488", fontSize: "0.9rem", textTransform: "uppercase"}}>Total Reactive Energy Penalties</h4>
+            <h4 style={{margin: "0 0 0.5rem 0", color: "#0d9488", fontSize: "0.9rem", textTransform: "uppercase"}}>Total Reactive Penalties</h4>
             <h2 style={{margin: 0, color: "#0f766e", fontSize: "2rem"}}>{kpis.total_reactive.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h2>
+         </div>
+         <div style={{background: "#f8fafc", padding: "1.5rem", borderRadius: "12px", border: "1px solid #cbd5e1"}}>
+            <h4 style={{margin: "0 0 0.5rem 0", color: "#475569", fontSize: "0.9rem", textTransform: "uppercase"}}>Average Energy Tariff</h4>
+            <h2 style={{margin: 0, color: "#334155", fontSize: "2rem"}}>R$ {kpis.average_tariff.toLocaleString('pt-BR', {minimumFractionDigits: 4})} <span style={{fontSize: "1rem", color: "#94a3b8"}}>/kWh</span></h2>
          </div>
       </div>
 

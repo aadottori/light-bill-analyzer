@@ -13,7 +13,7 @@ import shutil
 import uuid
 import re
 import io
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 from backend.parser import parse_pdf, parse_moeda
 
@@ -345,26 +345,74 @@ async def list_distinct_descriptions(db: Session = Depends(get_db), current_user
 
 # --- Analytics Routes ---
 
+def parse_month_date(m_str: str) -> date:
+    if not m_str: return date.min
+    months = {"JAN":1, "FEV":2, "MAR":3, "ABR":4, "MAI":5, "JUN":6, "JUL":7, "AGO":8, "SET":9, "OUT":10, "NOV":11, "DEZ":12}
+    parts = m_str.split('/')
+    if len(parts) == 2 and parts[0].upper() in months:
+        try:
+            return date(int(parts[1]), months[parts[0].upper()], 1)
+        except:
+            return date.min
+    return date.min
+
+def get_valid_bill_ids(db: Session, start_month: Optional[str] = None, end_month: Optional[str] = None) -> list:
+    bills = db.query(Bill).all()
+    start_d = parse_month_date(start_month) if start_month else date.min
+    end_d = parse_month_date(end_month) if end_month else date.max
+    
+    valid_ids = []
+    for b in bills:
+        bd = parse_month_date(b.reference_month)
+        if start_d <= bd <= end_d:
+            valid_ids.append(b.id)
+    # se não houver faturas ou o filtro for vazio, retornar [-1] para não quebrar o .in_() futuramente
+    return valid_ids if valid_ids else [-1]
+
 @app.get("/analytics/kpis")
-async def get_analytics_kpis(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_analytics_kpis(
+    start_month: Optional[str] = None,
+    end_month: Optional[str] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    valid_ids = get_valid_bill_ids(db, start_month, end_month)
+
     # Total Fines
     fines_total = db.query(func.sum(BillItem.amount)).filter(
-        BillItem.description.ilike("%Multa%") | BillItem.description.ilike("%Juros%")
+        BillItem.bill_id.in_(valid_ids),
+        (BillItem.description.ilike("%Multa%") | BillItem.description.ilike("%Juros%"))
     ).scalar() or 0.0
 
     # Total Reactive Energy
     reactive_total = db.query(func.sum(BillItem.amount)).filter(
+        BillItem.bill_id.in_(valid_ids),
         BillItem.description.ilike("%Reativ%")
     ).scalar() or 0.0
     
     # Peak vs Off-Peak Cost
     peak_cost = db.query(func.sum(BillItem.amount)).filter(
-        BillItem.description.ilike("%Ponta%") & ~BillItem.description.ilike("%Fora%")
+        BillItem.bill_id.in_(valid_ids),
+        (BillItem.description.ilike("%Ponta%") & ~BillItem.description.ilike("%Fora%"))
     ).scalar() or 0.0
     
     off_peak_cost = db.query(func.sum(BillItem.amount)).filter(
+        BillItem.bill_id.in_(valid_ids),
         BillItem.description.ilike("%Fora Ponta%")
     ).scalar() or 0.0
+
+    # Average Tariff (Total Energy Amount / Total Energy Qty)
+    energy_sum = db.query(func.sum(BillItem.amount)).filter(
+        BillItem.bill_id.in_(valid_ids),
+        (BillItem.description.ilike("%Energia Elétrica%") | BillItem.description.ilike("%Energia Ativa%"))
+    ).scalar() or 0.0
+    
+    energy_qty = db.query(func.sum(BillItem.quantity)).filter(
+        BillItem.bill_id.in_(valid_ids),
+        (BillItem.description.ilike("%Energia Elétrica%") | BillItem.description.ilike("%Energia Ativa%"))
+    ).scalar() or 0.0
+    
+    avg_tariff = (float(energy_sum) / float(energy_qty)) if energy_qty and energy_qty > 0 else 0.0
 
     return {
         "success": True, 
@@ -372,38 +420,47 @@ async def get_analytics_kpis(db: Session = Depends(get_db), current_user: User =
             "total_fines": float(fines_total),
             "total_reactive": float(reactive_total),
             "peak_cost": float(peak_cost),
-            "off_peak_cost": float(off_peak_cost)
+            "off_peak_cost": float(off_peak_cost),
+            "average_tariff": float(avg_tariff)
         }
     }
 
 @app.get("/analytics/trends")
-async def get_analytics_trends(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Requires grouping by month, we'll pull all distinct months, sort them, then sum
+async def get_analytics_trends(
+    start_month: Optional[str] = None,
+    end_month: Optional[str] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    valid_ids = get_valid_bill_ids(db, start_month, end_month)
+
     trends = db.query(
         Bill.reference_month,
         func.sum(Bill.total_amount).label('total')
-    ).group_by(Bill.reference_month).all()
+    ).filter(Bill.id.in_(valid_ids)).group_by(Bill.reference_month).all()
 
-    # Formatação basica, limpar None
     results = []
     for month, total in trends:
         if month:
             results.append({"month": month.strip(), "total": float(total) if total else 0.0})
     
-    # Em uma aplicação real, você deve fazer parsing da string MM/YYYY para ordenar cronologicamente
-    # Como as strings são ex "JAN/2025", elas não ordenam de forma nativa facilmente no python puro em 1 linha sem datetime mapping,
-    # então retornaremos como está e ordenaremos no frontend ou assumiremos o sort alfabético temporario
     return {"success": True, "data": results}
 
 @app.get("/analytics/offenders")
-async def get_analytics_offenders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Who has the most fines?
-    # Query: Join Bill, BillItem, Unit. Group by Unit Name, sum(Fines)
+async def get_analytics_offenders(
+    start_month: Optional[str] = None,
+    end_month: Optional[str] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    valid_ids = get_valid_bill_ids(db, start_month, end_month)
+
     results = db.query(
         Unit.name,
         func.sum(BillItem.amount).label("fines_total")
     ).select_from(BillItem).join(Bill).join(Unit).filter(
-        BillItem.description.ilike("%Multa%") | BillItem.description.ilike("%Juros%")
+        BillItem.bill_id.in_(valid_ids),
+        (BillItem.description.ilike("%Multa%") | BillItem.description.ilike("%Juros%"))
     ).group_by(Unit.name).order_by(func.sum(BillItem.amount).desc()).limit(5).all()
     
     formatted = [{"unit": r[0] or "Unknown", "fines": float(r[1]) if r[1] else 0.0} for r in results if r[1] and r[1] > 0]
