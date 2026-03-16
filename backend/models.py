@@ -37,6 +37,9 @@ class Bill(Base):
     total_amount = Column(Numeric(12, 2))
     
     unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
+    imported_at = Column(String, nullable=True)
+    imported_by = Column(String, nullable=True)
+    original_file_name = Column(String, nullable=True)
     
     unit = relationship("Unit", back_populates="bills")
     items = relationship("BillItem", back_populates="bill", cascade="all, delete-orphan")
@@ -70,6 +73,7 @@ class BillCreate(BaseModel):
     due_date: Optional[str] = None
     total_amount: Optional[str] = None
     unit_id: Optional[int] = None
+    original_file_name: Optional[str] = None
     items: List[BillItemCreate] = []
 
 class UnitCreate(BaseModel):

@@ -7,6 +7,7 @@ import BillDetails from './BillDetails.jsx'
 import BillEdit from './BillEdit.jsx'
 import Units from './Units.jsx'
 import Login from './Login.jsx'
+import Analytics from './Analytics.jsx'
 import { AuthProvider, useAuth } from './AuthContext.jsx'
 import './index.css'
 
@@ -18,6 +19,7 @@ function Header() {
       <h1 style={{margin: 0, fontSize: '1.5rem', color: 'var(--primary-color)'}}>UFRJ Energia</h1>
       <nav className="header-nav">
         <Link to="/" className="nav-link">History Dashboard</Link>
+        <Link to="/analytics" className="nav-link">Analytics</Link>
         {user?.role === 'admin' && (
           <>
             <Link to="/upload" className="nav-link">New Bill</Link>
@@ -63,6 +65,7 @@ function Layout() {
           <Route path="/units" element={<ProtectedRoute reqRole="admin"><Units /></ProtectedRoute>} />
           <Route path="/bill/:id" element={<ProtectedRoute><BillDetails /></ProtectedRoute>} />
           <Route path="/bill/:id/edit" element={<ProtectedRoute reqRole="admin"><BillEdit /></ProtectedRoute>} />
+          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
         </Routes>
       </main>
     </div>

@@ -66,6 +66,15 @@ export default function BillDetails() {
         </div>
       </div>
 
+      <div style={{marginTop: "2rem", marginBottom: "1rem", backgroundColor: "#f8fafc", padding: "1rem", borderRadius: "8px"}}>
+        <h4 style={{margin: "0 0 0.5rem 0", color: "#64748b", fontSize: "0.85rem", textTransform: "uppercase"}}>Import Metadata</h4>
+        <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", fontSize: "0.9rem"}}>
+            <div><span style={{fontWeight: 600, color: "#475569"}}>Original File:</span> <br/>{bill.original_file_name || "Unknown"}</div>
+            <div><span style={{fontWeight: 600, color: "#475569"}}>Imported By:</span> <br/>{bill.imported_by || "Unknown"}</div>
+            <div><span style={{fontWeight: 600, color: "#475569"}}>Import Date:</span> <br/>{bill.imported_at ? new Date(bill.imported_at).toLocaleString() : "Unknown"}</div>
+        </div>
+      </div>
+
       <div style={{marginTop: "2rem", marginBottom: "1rem", display: "flex", justifyContent: "space-between", alignItems: "baseline"}}>
         <h3 className="section-subtitle">Extracted Items</h3>
         <h3 style={{color: "var(--primary-color)"}}>

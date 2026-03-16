@@ -101,7 +101,7 @@ export default function Dashboard() {
         headers: { "Authorization": `Bearer ${user.token}` }
       });
       if (!res.ok) throw new Error("Export failed");
-      
+
       const blob = await res.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -121,7 +121,7 @@ export default function Dashboard() {
   return (
     <div className="dashboard-section">
       <div className="dashboard-header" style={{ flexDirection: "column", alignItems: "flex-start", gap: "1rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
           <h2>Latest Processed Bills</h2>
           {user?.role === 'admin' && (
             <button className="btn btn-primary" onClick={() => navigate('/upload')}>
@@ -180,11 +180,10 @@ export default function Dashboard() {
               <tr>
                 <th>Inst. Code</th>
                 <th>Linked Unit</th>
-                <th>Contract Acc.</th>
                 <th>Ref. Month</th>
                 <th>Due Date</th>
                 <th style={{ cursor: "pointer", color: "var(--primary-color)" }} onClick={() => setSortAmount(sortAmount === "desc" ? "asc" : "desc")}>
-                  Total Amount (R$) {sortAmount === "desc" ? "↓" : sortAmount === "asc" ? "↑" : "↕"}
+                  Total Amount {sortAmount === "desc" ? "↓" : sortAmount === "asc" ? "↑" : "↕"}
                 </th>
                 <th>Actions</th>
               </tr>
@@ -196,7 +195,6 @@ export default function Dashboard() {
                   <td>
                     {bill.unit_name || 'Not linked'}
                   </td>
-                  <td>{bill.contract_account || "-"}</td>
                   <td>{bill.reference_month}</td>
                   <td>{bill.due_date}</td>
                   <td style={{ fontWeight: "600" }}>

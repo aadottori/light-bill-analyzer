@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import func, extract, and_, or_
 from backend.database import SessionLocal, engine, Base, get_db
 from backend.models import BillCreate, Bill, BillItem, Unit, UnitCreate, User
 from pydantic import BaseModel
@@ -12,6 +13,7 @@ import shutil
 import uuid
 import re
 import io
+from datetime import datetime
 import pandas as pd
 from backend.parser import parse_pdf, parse_moeda
 
@@ -48,6 +50,7 @@ async def upload_pdf(files: list[UploadFile] = File(...), current_user: User = D
             
         try:
             extracted_data = parse_pdf(file_path)
+            extracted_data["original_file_name"] = file.filename
             results.append({"filename": file.filename, "success": True, "data": extracted_data})
         except Exception as e:
             results.append({"filename": file.filename, "success": False, "error": str(e)})
@@ -101,7 +104,10 @@ async def save_bill(bill_in: BillCreate, db: Session = Depends(get_db), current_
         reference_month=bill_in.reference_month,
         due_date=db_parse_date(bill_in.due_date),
         total_amount=db_parse_numeric(bill_in.total_amount),
-        unit_id=unit_id
+        unit_id=unit_id,
+        imported_at=datetime.utcnow().isoformat(),
+        imported_by=current_user.username,
+        original_file_name=bill_in.original_file_name
     )
     
     # Criar relação One-to-Many
@@ -281,6 +287,18 @@ async def export_bills(
     }
     return StreamingResponse(buffer, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers=headers)
     
+@app.get("/bills/months")
+async def list_distinct_months(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    months = db.query(Bill.reference_month).distinct().all()
+    clean_list = list(set([m[0].strip() for m in months if m[0]]))
+    return {"success": True, "data": sorted(clean_list)}
+
+@app.get("/bills/installations")
+async def list_distinct_installations(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    installations = db.query(Bill.installation_code).distinct().all()
+    clean_list = list(set([i[0].strip() for i in installations if i[0]]))
+    return {"success": True, "data": sorted(clean_list)}
+
 @app.get("/bills/{bill_id}")
 async def get_bill_details(bill_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     bill = db.query(Bill).filter(Bill.id == bill_id).first()
@@ -303,6 +321,9 @@ async def get_bill_details(bill_id: int, db: Session = Depends(get_db), current_
             "due_date": str(bill.due_date) if bill.due_date else None,
             "total_amount": float(bill.total_amount) if bill.total_amount else None,
             "unit_name": unit_name,
+            "imported_at": bill.imported_at,
+            "imported_by": bill.imported_by,
+            "original_file_name": bill.original_file_name,
             "items": [
                 {
                     "description": item.description,
@@ -322,17 +343,71 @@ async def list_distinct_descriptions(db: Session = Depends(get_db), current_user
     clean_list = [desc[0] for desc in descriptions if desc[0]] 
     return {"success": True, "data": clean_list}
 
-@app.get("/bills/months")
-async def list_distinct_months(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    months = db.query(Bill.reference_month).distinct().all()
-    clean_list = list(set([m[0].strip() for m in months if m[0]]))
-    return {"success": True, "data": sorted(clean_list)}
+# --- Analytics Routes ---
 
-@app.get("/bills/installations")
-async def list_distinct_installations(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    installations = db.query(Bill.installation_code).distinct().all()
-    clean_list = list(set([i[0].strip() for i in installations if i[0]]))
-    return {"success": True, "data": sorted(clean_list)}
+@app.get("/analytics/kpis")
+async def get_analytics_kpis(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Total Fines
+    fines_total = db.query(func.sum(BillItem.amount)).filter(
+        BillItem.description.ilike("%Multa%") | BillItem.description.ilike("%Juros%")
+    ).scalar() or 0.0
+
+    # Total Reactive Energy
+    reactive_total = db.query(func.sum(BillItem.amount)).filter(
+        BillItem.description.ilike("%Reativ%")
+    ).scalar() or 0.0
+    
+    # Peak vs Off-Peak Cost
+    peak_cost = db.query(func.sum(BillItem.amount)).filter(
+        BillItem.description.ilike("%Ponta%") & ~BillItem.description.ilike("%Fora%")
+    ).scalar() or 0.0
+    
+    off_peak_cost = db.query(func.sum(BillItem.amount)).filter(
+        BillItem.description.ilike("%Fora Ponta%")
+    ).scalar() or 0.0
+
+    return {
+        "success": True, 
+        "data": {
+            "total_fines": float(fines_total),
+            "total_reactive": float(reactive_total),
+            "peak_cost": float(peak_cost),
+            "off_peak_cost": float(off_peak_cost)
+        }
+    }
+
+@app.get("/analytics/trends")
+async def get_analytics_trends(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Requires grouping by month, we'll pull all distinct months, sort them, then sum
+    trends = db.query(
+        Bill.reference_month,
+        func.sum(Bill.total_amount).label('total')
+    ).group_by(Bill.reference_month).all()
+
+    # Formatação basica, limpar None
+    results = []
+    for month, total in trends:
+        if month:
+            results.append({"month": month.strip(), "total": float(total) if total else 0.0})
+    
+    # Em uma aplicação real, você deve fazer parsing da string MM/YYYY para ordenar cronologicamente
+    # Como as strings são ex "JAN/2025", elas não ordenam de forma nativa facilmente no python puro em 1 linha sem datetime mapping,
+    # então retornaremos como está e ordenaremos no frontend ou assumiremos o sort alfabético temporario
+    return {"success": True, "data": results}
+
+@app.get("/analytics/offenders")
+async def get_analytics_offenders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Who has the most fines?
+    # Query: Join Bill, BillItem, Unit. Group by Unit Name, sum(Fines)
+    results = db.query(
+        Unit.name,
+        func.sum(BillItem.amount).label("fines_total")
+    ).select_from(BillItem).join(Bill).join(Unit).filter(
+        BillItem.description.ilike("%Multa%") | BillItem.description.ilike("%Juros%")
+    ).group_by(Unit.name).order_by(func.sum(BillItem.amount).desc()).limit(5).all()
+    
+    formatted = [{"unit": r[0] or "Unknown", "fines": float(r[1]) if r[1] else 0.0} for r in results if r[1] and r[1] > 0]
+    return {"success": True, "data": formatted}
 
 @app.get("/units")
 async def list_units(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -345,6 +420,12 @@ async def create_unit(unit_in: UnitCreate, db: Session = Depends(get_db), curren
     db.add(db_unit)
     db.commit()
     db.refresh(db_unit)
+    
+    # Auto-link existing bills
+    if unit_in.installation_code:
+        db.query(Bill).filter(Bill.installation_code == unit_in.installation_code).update({Bill.unit_id: db_unit.id})
+        db.commit()
+        
     return {"success": True, "id": db_unit.id}
 
 @app.put("/units/{unit_id}")
@@ -353,9 +434,19 @@ async def update_unit(unit_id: int, unit_in: UnitCreate, db: Session = Depends(g
     if not db_unit:
         raise HTTPException(status_code=404, detail="Unit not found")
     
+    old_code = db_unit.installation_code
     db_unit.name = unit_in.name
     db_unit.installation_code = unit_in.installation_code
     db.commit()
+    
+    # Auto-linking logic on update
+    if old_code != unit_in.installation_code:
+        # Unlink bills that belonged to this unit but DO NOT match the new code
+        db.query(Bill).filter(Bill.unit_id == unit_id, Bill.installation_code != unit_in.installation_code).update({Bill.unit_id: None})
+        # Link globally existing bills that match the new code
+        db.query(Bill).filter(Bill.installation_code == unit_in.installation_code).update({Bill.unit_id: unit_id})
+        db.commit()
+        
     db.refresh(db_unit)
     return {"success": True, "id": db_unit.id}
 
@@ -389,7 +480,7 @@ async def signup(user: UserLogin, db: Session = Depends(get_db)):
     hashed = get_password_hash(user.password)
     
     role = "viewer"
-    if user.secret == "tcc_admin_123":
+    if user.secret == "tcc":
         role = "admin"
         
     new_user = User(username=user.username, hashed_password=hashed, role=role)

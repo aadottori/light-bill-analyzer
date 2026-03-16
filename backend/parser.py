@@ -58,7 +58,7 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
                 data["installation_code"] = inst_implicit.group(1)
             
         # 2. Mes de referência, Vencimento e Valor Total
-        val_match = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$([\d.,]+)", text)
+        val_match = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$\s*([\d.,]+)", text)
         if val_match:
             data["reference_month"] = val_match.group(1)
             data["due_date"] = val_match.group(2)
@@ -79,6 +79,11 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
         if demanda_match:
             add_item("Demanda Ativa", demanda_match.group(1), demanda_match.group(2), demanda_match.group(3))
             
+        # 3b. Energia Elétrica (Simples)
+        energia_simples_match = re.search(r"Energia El[ée]trica\s+(?:kWh\s+){1,2}([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
+        if energia_simples_match:
+            add_item("Energia Elétrica", energia_simples_match.group(1), energia_simples_match.group(2), energia_simples_match.group(3))
+
         # 4. Energia Ativa - Fora Ponta
         energia_hfp_match = re.search(r"Energia Ativa\s+kWh\s+HFP/Único\s+kWh\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
         if energia_hfp_match:
@@ -94,7 +99,7 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
         if energia_reativa_match:
             add_item("Energia Reativa", energia_reativa_match.group(1), energia_reativa_match.group(2), energia_reativa_match.group(3))
 
-        # 7. Impostos Retidos
+        # 7. Impostos Retidos e Outros
         impostos = {
             "Imposto Retido IRPJ (Demanda)": r"Imposto Retido IRPJ - Demanda\s+([-\d.,]+)",
             "Imposto Retido PIS (Demanda)": r"Imposto Retido PIS - Demanda\s+([-\d.,]+)",
@@ -105,6 +110,7 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
             "Imposto Retido COFINS (Energia)": r"Imposto Retido COFINS\s*-?\s*Energia\s+([-\d.,]+)",
             "Imposto Retido CSLL (Energia)": r"Imposto Retido CSLL - Energia\s+([-\d.,]+)",
             "Contribuição Iluminação Pública": r"Contrib Ilum Pública Municipal\s+([\d.,]+)",
+            "Débito Var IPCA": r"D[ÉE]BITO VAR IPCA\s+([-\d.,]+)",
         }
         for desc, regex in impostos.items():
             match = re.search(regex, text)

@@ -140,7 +140,7 @@ export default function Units() {
         <p style={{ marginBottom: "1rem", color: "#64748b" }}>
           Link an Installation Code to a building name. Future bills will be automatically associated with this unit.
         </p>
-        <form onSubmit={handleCreate} style={{ display: "flex", gap: "1rem", alignItems: "flex-end" }}>
+        <form onSubmit={handleCreate} style={{ display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap" }}>
           <div>
             <label className="data-label">UNIT NAME</label>
             <input type="text" className="data-input" value={name} onChange={e => setName(e.target.value)} placeholder="E.g.: CT, CCMN..." />
