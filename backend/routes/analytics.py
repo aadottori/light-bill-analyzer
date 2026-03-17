@@ -157,3 +157,110 @@ async def get_analytics_units_cost(
     
     formatted = [{"unit": r[0] or "Unknown", "total": float(r[1]) if r[1] else 0.0} for r in results if r[1] and r[1] > 0]
     return {"success": True, "data": formatted}
+
+@router.get("/analytics/reactive/units")
+async def get_reactive_per_unit(
+    start_month: Optional[str] = None,
+    end_month: Optional[str] = None,
+    unit_id: Optional[int] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Reactive energy cost per building unit."""
+    valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
+
+    results = db.query(
+        Unit.name,
+        func.sum(BillItem.amount).label("reactive_total")
+    ).select_from(BillItem).join(Bill).join(Unit).filter(
+        BillItem.bill_id.in_(valid_ids),
+        BillItem.description.ilike("%Reativ%")
+    ).group_by(Unit.name).order_by(func.sum(BillItem.amount).desc()).all()
+    
+    formatted = [{"unit": r[0] or "Unknown", "reactive": float(r[1]) if r[1] else 0.0} for r in results if r[1] and r[1] > 0]
+    return {"success": True, "data": formatted}
+
+@router.get("/analytics/demand")
+async def get_demand_analysis(
+    start_month: Optional[str] = None,
+    end_month: Optional[str] = None,
+    unit_id: Optional[int] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Demand analysis: contracted vs consumed per building unit."""
+    valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
+
+    # Group demand items by unit and get avg quantity (contracted) and avg consumption 
+    results = db.query(
+        Unit.name,
+        func.avg(BillItem.quantity).label("avg_contracted"),
+        func.sum(BillItem.amount).label("total_demand_cost"),
+        func.count(BillItem.id).label("bill_count")
+    ).select_from(BillItem).join(Bill).join(Unit).filter(
+        BillItem.bill_id.in_(valid_ids),
+        BillItem.description.ilike("%Demanda%")
+    ).group_by(Unit.name).order_by(func.sum(BillItem.amount).desc()).all()
+    
+    formatted = []
+    for r in results:
+        if r[1] and r[1] > 0:
+            formatted.append({
+                "unit": r[0] or "Unknown",
+                "avg_contracted_kw": round(float(r[1]), 1),
+                "total_cost": round(float(r[2]), 2) if r[2] else 0.0,
+                "bills": int(r[3])
+            })
+    return {"success": True, "data": formatted}
+
+@router.get("/analytics/monthly-breakdown")
+async def get_monthly_breakdown(
+    start_month: Optional[str] = None,
+    end_month: Optional[str] = None,
+    unit_id: Optional[int] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Monthly cost breakdown by category: energy, demand, reactive, taxes, flags, fines."""
+    valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
+
+    items = db.query(
+        Bill.reference_month,
+        BillItem.description,
+        func.sum(BillItem.amount).label("total")
+    ).select_from(BillItem).join(Bill).filter(
+        BillItem.bill_id.in_(valid_ids)
+    ).group_by(Bill.reference_month, BillItem.description).all()
+
+    monthly = {}
+    for month, desc, total in items:
+        if not month:
+            continue
+        m = month.strip()
+        if m not in monthly:
+            monthly[m] = {"month": m, "energy": 0, "demand": 0, "reactive": 0, "taxes": 0, "flags": 0, "fines": 0}
+        
+        amt = float(total) if total else 0.0
+        desc_lower = (desc or "").lower()
+        
+        if "energia" in desc_lower:
+            monthly[m]["energy"] += amt
+        elif "demanda" in desc_lower:
+            monthly[m]["demand"] += amt
+        elif "reativ" in desc_lower:
+            monthly[m]["reactive"] += amt
+        elif any(k in desc_lower for k in ["imposto", "contribui", "débito var", "debito var"]):
+            monthly[m]["taxes"] += amt
+        elif "bandeira" in desc_lower or "adicional" in desc_lower:
+            monthly[m]["flags"] += amt
+        elif "multa" in desc_lower or "juros" in desc_lower:
+            monthly[m]["fines"] += amt
+    
+    results = list(monthly.values())
+    # Round values
+    for r in results:
+        for k in ["energy", "demand", "reactive", "taxes", "flags", "fines"]:
+            r[k] = round(r[k], 2)
+
+    return {"success": True, "data": results}
+
