@@ -10,6 +10,8 @@ export default function App() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
   const [descricoesSugeridas, setDescricoesSugeridas] = useState([]);
+  const [autoSave, setAutoSave] = useState(false);
+  const [autoSaveProgress, setAutoSaveProgress] = useState(null); // String to show progress e.g "Saving 1 of 5"
   const navigate = useNavigate();
 
   // Buscar descrições já existentes para popular o datalist
@@ -55,27 +57,79 @@ export default function App() {
         body: formData,
       });
       const data = await response.json();
-      
       const successResults = data.results.filter(r => r.success).map(r => r.data);
       const errorResults = data.results.filter(r => !r.success);
-      
+
       if (successResults.length > 0) {
-        setExtractedDataList(successResults);
-        setCurrentIndex(0);
+        if (autoSave) {
+          // AUTO-SAVE FLOW
+          await processAutoSave(successResults);
+          if (errorResults.length > 0) {
+            const fileNames = errorResults.map(r => r.filename).join(", ");
+            alert(`Auto-save partially complete. The following files failed to parse: ${fileNames}`);
+          }
+        } else {
+          // MANUAL REVIEW FLOW
+          setExtractedDataList(successResults);
+          setCurrentIndex(0);
+          if (errorResults.length > 0) {
+            const fileNames = errorResults.map(r => r.filename).join(", ");
+            alert(`Warning: Failed to process the following files: ${fileNames}`);
+          }
+        }
       } else {
         setError("No files could be processed.");
-      }
-
-      if (errorResults.length > 0) {
-        const fileNames = errorResults.map(r => r.filename).join(", ");
-        alert(`Warning: Failed to process the following files: ${fileNames}`);
+        if (errorResults.length > 0) {
+          const fileNames = errorResults.map(r => r.filename).join(", ");
+          alert(`Failed to process all files: ${fileNames}`);
+        }
       }
       
     } catch (err) {
       setError("Failed to communicate with the FastAPI backend. Make sure it's running on port 8000.");
     } finally {
-      setLoading(false);
+      if (!autoSave) {
+          setLoading(false);
+      }
     }
+  };
+
+  const processAutoSave = async (parsedBills) => {
+    let savedCount = 0;
+    let failedCount = 0;
+    
+    for (let i = 0; i < parsedBills.length; i++) {
+        setAutoSaveProgress(`Saving bill ${i + 1} of ${parsedBills.length}...`);
+        const bill = parsedBills[i];
+        
+        try {
+            // Skips conflict checking for auto-save to keep it simple and fast.
+            // If the user wants to overwrite, they should use manual mode.
+            // We just attempt standard POST.
+            const response = await fetch("http://localhost:8000/bills", {
+                method: "POST",
+                headers: { 
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${user.token}`
+                },
+                body: JSON.stringify(bill),
+            });
+            const data = await response.json();
+            if (data.success) {
+                savedCount++;
+            } else {
+                failedCount++;
+            }
+        } catch (e) {
+            failedCount++;
+        }
+    }
+    
+    setLoading(false);
+    setAutoSaveProgress(null);
+    setFiles(null);
+    alert(`Auto-save finished! ${savedCount} saved successfully. ${failedCount > 0 ? failedCount + ' failed.' : ''}`);
+    navigate('/');
   };
 
   const currentData = extractedDataList[currentIndex];
@@ -173,15 +227,50 @@ export default function App() {
         </datalist>
 
         {extractedDataList.length === 0 ? (
-          <div className="upload-section">
-            <h2>Batch PDF Bill Upload</h2>
-            <div className="upload-box">
-              <input type="file" accept=".pdf" multiple onChange={handleFileChange} />
-              <button className="btn btn-primary btn-large" onClick={handleUpload} disabled={!files || loading}>
-                {loading ? "Processing..." : "Extract Data"}
-              </button>
+          <div className="upload-section" style={{maxWidth: "600px", margin: "0 auto", textAlign: "center", padding: "3rem 2rem", background: "#fff", borderRadius: "16px", boxShadow: "0 4px 20px rgba(0,0,0,0.05)"}}>
+            <h2 style={{marginTop: 0, color: "var(--primary-color)"}}>Batch Bill Upload</h2>
+            <p style={{color: "#64748b", marginBottom: "2rem"}}>Select one or more Light PDF bills to securely import them into your database.</p>
+            
+            <div className="upload-box" style={{border: "2px dashed #cbd5e1", borderRadius: "12px", padding: "3rem 1rem", background: "#f8fafc", transition: "all 0.3s", position: "relative", marginBottom: "2rem"}}>
+              <svg style={{width: "48px", height: "48px", color: "#94a3b8", marginBottom: "1rem"}} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+              <h3 style={{fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "#334155"}}>Drag & Drop your PDFs here</h3>
+              <p style={{fontSize: "0.9rem", color: "#94a3b8", margin: "0 0 1.5rem 0"}}>or click the button below to browse</p>
+              
+              <input 
+                type="file" 
+                accept=".pdf" 
+                multiple 
+                onChange={handleFileChange} 
+                style={{
+                  opacity: 0, width: "100%", height: "100%", position: "absolute", top: 0, left: 0, cursor: "pointer"
+                }}
+              />
+              <span className="btn btn-secondary" style={{pointerEvents: "none"}}>Browse Files</span>
             </div>
-            {error && <p className="error-message">{error}</p>}
+
+            {files && files.length > 0 && (
+              <div style={{background: "#f1f5f9", padding: "0.8rem", borderRadius: "8px", marginBottom: "2rem", fontSize: "0.9rem", color: "#334155"}}>
+                <strong style={{color: "var(--primary-color)"}}>{files.length}</strong> {files.length === 1 ? 'file' : 'files'} selected ready for extraction.
+              </div>
+            )}
+
+            <div style={{display: "flex", flexDirection: "column", gap: "1rem", alignItems: "center"}}>
+                <label style={{display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "1rem", color: "#475569", userSelect: "none"}}>
+                    <input 
+                        type="checkbox" 
+                        checked={autoSave} 
+                        onChange={(e) => setAutoSave(e.target.checked)} 
+                        style={{width: "18px", height: "18px", cursor: "pointer"}}
+                    />
+                    <strong>Fast Track Mode</strong> (Auto-Save valid bills immediately)
+                </label>
+
+                <button className="btn btn-primary btn-large" style={{width: "100%", marginTop: "1rem"}} onClick={handleUpload} disabled={!files || loading}>
+                    {loading ? (autoSaveProgress || "Extracting data...") : "Start Import"}
+                </button>
+            </div>
+            
+            {error && <p className="error-message" style={{marginTop: "2rem"}}>{error}</p>}
           </div>
         ) : (
           <div className="validation-section">
