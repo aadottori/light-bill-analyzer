@@ -32,6 +32,7 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
         "reference_month": None,
         "due_date": None,
         "total_amount": None,
+        "building_name": None,
         "items": [] # Nova lista dinâmica One-to-Many
     }
     
@@ -142,6 +143,12 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
             
         if multas_juros_total > 0:
             add_item("Multas e Juros", None, None, format_moeda(multas_juros_total))
+
+        # 9. Nome do prédio (extrair do rodapé da fatura)
+        # Formato: "Fatura 01 Residência Estudantil (5140657) SEI 23079..."
+        building_match = re.search(r"Fatura\s+\d+\s+(.+?)\s*\(\d+\)", text)
+        if building_match:
+            data["building_name"] = building_match.group(1).strip()
             
         return data
         
