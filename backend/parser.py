@@ -52,10 +52,15 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
         if inst_explicit:
             data["installation_code"] = inst_explicit.group(1)
         else:
-            # Fallback: procura o primeiro número de exatos 9 dígitos isolado na parte superior do PDF
+            # Fallback 1: procura o primeiro número de exatos 9 dígitos isolado na parte superior do PDF
             inst_implicit = re.search(r"(?<![\d/.-])(\d{9})(?![\d/.-])", text[:1000])
             if inst_implicit:
                 data["installation_code"] = inst_implicit.group(1)
+            else:
+                # Fallback 2: Light NF3e often puts the Meter Number before 'Energia Ativa'
+                meter_match = re.search(r"(\d{8,12})\s+Energia\s*Ativa", text, re.IGNORECASE)
+                if meter_match:
+                    data["installation_code"] = meter_match.group(1)
             
         # 2. Mes de referência, Vencimento e Valor Total
         val_match = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$\s*([\d.,]+)", text)
@@ -75,42 +80,50 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
                 })
             
         # 3. Demanda Ativa
-        demanda_match = re.search(r"Demanda Ativa\s+kW\s+HFP/Único\s+kW\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
+        demanda_match = re.search(r"Demanda\s*Ativa\s*kWe?[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
         if demanda_match:
             add_item("Demanda Ativa", demanda_match.group(1), demanda_match.group(2), demanda_match.group(3))
             
         # 3b. Energia Elétrica (Simples)
-        energia_simples_match = re.search(r"Energia El[ée]trica\s+(?:kWh\s+){1,2}([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
+        energia_simples_match = re.search(r"Energia El[ée]trica\s+(?:kWh\s+){1,2}([\d.,]+)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
         if energia_simples_match:
             add_item("Energia Elétrica", energia_simples_match.group(1), energia_simples_match.group(2), energia_simples_match.group(3))
 
         # 4. Energia Ativa - Fora Ponta
-        energia_hfp_match = re.search(r"Energia Ativa\s+kWh\s+HFP/Único\s+kWh\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
+        energia_hfp_match = re.search(r"Energia\s*Ativa[\s\w/-]*?HFP[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
         if energia_hfp_match:
              add_item("Energia Ativa Fora Ponta", energia_hfp_match.group(1), energia_hfp_match.group(2), energia_hfp_match.group(3))
             
         # 5. Energia Ativa - Ponta
-        energia_hp_match = re.search(r"Energia Ativa\s+kWh\s+HP\s+kWh\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
+        energia_hp_match = re.search(r"Energia\s*Ativa[\s\w/-]*?(?<!H)HP[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
         if energia_hp_match:
              add_item("Energia Ativa Ponta", energia_hp_match.group(1), energia_hp_match.group(2), energia_hp_match.group(3))
             
         # 6. Energia Reativa
-        energia_reativa_match = re.search(r"Energia Reativa\s+kWh\s+HFP/Único\s+kWh\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)", text)
+        energia_reativa_match = re.search(r"Energia\s*Reativa[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
         if energia_reativa_match:
             add_item("Energia Reativa", energia_reativa_match.group(1), energia_reativa_match.group(2), energia_reativa_match.group(3))
 
+        # 6.b Custo de Disponibilidade
+        custo_disp_match = re.search(r"Custo\s*de\s*Disponibilidade[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
+        if custo_disp_match:
+            add_item("Custo de Disponibilidade kWh", custo_disp_match.group(1), custo_disp_match.group(2), custo_disp_match.group(3))
+
         # 7. Impostos Retidos e Outros
         impostos = {
-            "Imposto Retido IRPJ (Demanda)": r"Imposto Retido IRPJ - Demanda\s+([-\d.,]+)",
-            "Imposto Retido PIS (Demanda)": r"Imposto Retido PIS - Demanda\s+([-\d.,]+)",
-            "Imposto Retido COFINS (Demanda)": r"Imposto Retido COFINS\s*-?\s*Demanda\s+([-\d.,]+)",
-            "Imposto Retido CSLL (Demanda)": r"Imposto Retido CSLL - Demanda\s+([-\d.,]+)",
-            "Imposto Retido IRPJ (Energia)": r"Imposto Retido IRPJ - Energia\s+([-\d.,]+)",
-            "Imposto Retido PIS (Energia)": r"Imposto Retido PIS - Energia\s+([-\d.,]+)",
-            "Imposto Retido COFINS (Energia)": r"Imposto Retido COFINS\s*-?\s*Energia\s+([-\d.,]+)",
-            "Imposto Retido CSLL (Energia)": r"Imposto Retido CSLL - Energia\s+([-\d.,]+)",
-            "Contribuição Iluminação Pública": r"Contrib Ilum Pública Municipal\s+([\d.,]+)",
-            "Débito Var IPCA": r"D[ÉE]BITO VAR IPCA\s+([-\d.,]+)",
+            "Imposto Retido IRPJ (Demanda)": r"Imposto\s*Retido\s*IRPJ\s*-\s*Demanda.*?([-\d.,]+,\d{2})(?!\d)",
+            "Imposto Retido PIS (Demanda)": r"Imposto\s*Retido\s*PIS\s*-\s*Demanda.*?([-\d.,]+,\d{2})(?!\d)",
+            "Imposto Retido COFINS (Demanda)": r"Imposto\s*Retido\s*COFINS\s*-?\s*Demanda.*?([-\d.,]+,\d{2})(?!\d)",
+            "Imposto Retido CSLL (Demanda)": r"Imposto\s*Retido\s*CSLL\s*-\s*Demanda.*?([-\d.,]+,\d{2})(?!\d)",
+            "Imposto Retido IRPJ (Energia)": r"Imposto\s*Retido\s*IRPJ\s*-\s*Energia.*?([-\d.,]+,\d{2})(?!\d)",
+            "Imposto Retido PIS (Energia)": r"Imposto\s*Retido\s*PIS\s*-\s*Energia.*?([-\d.,]+,\d{2})(?!\d)",
+            "Imposto Retido COFINS (Energia)": r"Imposto\s*Retido\s*COFINS\s*-?\s*Energia.*?([-\d.,]+,\d{2})(?!\d)",
+            "Imposto Retido CSLL (Energia)": r"Imposto\s*Retido\s*CSLL\s*-\s*Energia.*?([-\d.,]+,\d{2})(?!\d)",
+            "Contribuição Iluminação Pública": r"Contrib\s*Ilum\s*P[úu]blica\s*(?:Municipal)?.*?([\d.,]+,\d{2})(?!\d)",
+            "Débito Var IPCA": r"D[ÉE]BITO\s*VAR\s*IPCA.*?([-\d.,]+,\d{2})(?!\d)",
+            "Adicional Bandeiras": r"Adicional\s*Bandeiras.*?([-\d.,]+,\d{2})(?!\d)",
+            "Bandeira Vermelha": r"Bandeira\s*Vermelha.*?([-\d.,]+,\d{2})(?!\d)",
+            "Bandeira Amarela": r"Bandeira\s*Amarela.*?([-\d.,]+,\d{2})(?!\d)",
         }
         for desc, regex in impostos.items():
             match = re.search(regex, text)

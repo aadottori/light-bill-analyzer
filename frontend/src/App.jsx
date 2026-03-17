@@ -103,11 +103,23 @@ export default function App() {
         const bill = parsedBills[i];
         
         try {
-            // Skips conflict checking for auto-save to keep it simple and fast.
-            // If the user wants to overwrite, they should use manual mode.
-            // We just attempt standard POST.
-            const response = await fetch("http://localhost:8000/bills", {
-                method: "POST",
+            let endpoint = "http://localhost:8000/bills";
+            let method = "POST";
+            
+            // Check if it already exists to overwrite it instead of duplicating
+            if (bill.installation_code && bill.reference_month) {
+                const checkRes = await fetch(`http://localhost:8000/bills/check?installation_code=${bill.installation_code}&reference_month=${encodeURIComponent(bill.reference_month)}`, {
+                    headers: { "Authorization": `Bearer ${user.token}` }
+                });
+                const checkData = await checkRes.json();
+                if (checkData.success && checkData.exists) {
+                    endpoint = `http://localhost:8000/bills/${checkData.bill_id}`;
+                    method = "PUT";
+                }
+            }
+
+            const response = await fetch(endpoint, {
+                method: method,
                 headers: { 
                   "Content-Type": "application/json",
                   "Authorization": `Bearer ${user.token}`

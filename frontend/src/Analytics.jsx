@@ -10,6 +10,7 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [availableMonths, setAvailableMonths] = useState([]);
   const [units, setUnits] = useState([]);
+  const [unitCosts, setUnitCosts] = useState([]);
   const [startMonth, setStartMonth] = useState("");
   const [endMonth, setEndMonth] = useState("");
   const [unitId, setUnitId] = useState("");
