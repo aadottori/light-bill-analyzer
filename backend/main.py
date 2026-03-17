@@ -356,8 +356,12 @@ def parse_month_date(m_str: str) -> date:
             return date.min
     return date.min
 
-def get_valid_bill_ids(db: Session, start_month: Optional[str] = None, end_month: Optional[str] = None) -> list:
-    bills = db.query(Bill).all()
+def get_valid_bill_ids(db: Session, start_month: Optional[str] = None, end_month: Optional[str] = None, unit_id: Optional[int] = None) -> list:
+    query = db.query(Bill)
+    if unit_id:
+        query = query.filter(Bill.unit_id == unit_id)
+    bills = query.all()
+    
     start_d = parse_month_date(start_month) if start_month else date.min
     end_d = parse_month_date(end_month) if end_month else date.max
     
@@ -373,10 +377,11 @@ def get_valid_bill_ids(db: Session, start_month: Optional[str] = None, end_month
 async def get_analytics_kpis(
     start_month: Optional[str] = None,
     end_month: Optional[str] = None,
+    unit_id: Optional[int] = None,
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    valid_ids = get_valid_bill_ids(db, start_month, end_month)
+    valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
 
     # Total Fines
     fines_total = db.query(func.sum(BillItem.amount)).filter(
@@ -429,10 +434,11 @@ async def get_analytics_kpis(
 async def get_analytics_trends(
     start_month: Optional[str] = None,
     end_month: Optional[str] = None,
+    unit_id: Optional[int] = None,
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    valid_ids = get_valid_bill_ids(db, start_month, end_month)
+    valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
 
     trends = db.query(
         Bill.reference_month,
@@ -450,10 +456,11 @@ async def get_analytics_trends(
 async def get_analytics_offenders(
     start_month: Optional[str] = None,
     end_month: Optional[str] = None,
+    unit_id: Optional[int] = None,
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    valid_ids = get_valid_bill_ids(db, start_month, end_month)
+    valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
 
     results = db.query(
         Unit.name,
@@ -464,6 +471,26 @@ async def get_analytics_offenders(
     ).group_by(Unit.name).order_by(func.sum(BillItem.amount).desc()).limit(5).all()
     
     formatted = [{"unit": r[0] or "Unknown", "fines": float(r[1]) if r[1] else 0.0} for r in results if r[1] and r[1] > 0]
+    return {"success": True, "data": formatted}
+
+@app.get("/analytics/units/cost")
+async def get_analytics_units_cost(
+    start_month: Optional[str] = None,
+    end_month: Optional[str] = None,
+    unit_id: Optional[int] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
+
+    results = db.query(
+        Unit.name,
+        func.sum(Bill.total_amount).label('total')
+    ).select_from(Bill).join(Unit).filter(
+        Bill.id.in_(valid_ids)
+    ).group_by(Unit.name).order_by(func.sum(Bill.total_amount).desc()).all()
+    
+    formatted = [{"unit": r[0] or "Unknown", "total": float(r[1]) if r[1] else 0.0} for r in results if r[1] and r[1] > 0]
     return {"success": True, "data": formatted}
 
 @app.get("/units")

@@ -9,8 +9,10 @@ export default function Analytics() {
   const [offenders, setOffenders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [availableMonths, setAvailableMonths] = useState([]);
+  const [units, setUnits] = useState([]);
   const [startMonth, setStartMonth] = useState("");
   const [endMonth, setEndMonth] = useState("");
+  const [unitId, setUnitId] = useState("");
 
   const monthMap = {"JAN": 0, "FEV": 1, "MAR": 2, "ABR": 3, "MAI": 4, "JUN": 5, "JUL": 6, "AGO": 7, "SET": 8, "OUT": 9, "NOV": 10, "DEZ": 11};
 
@@ -29,6 +31,12 @@ export default function Analytics() {
             setAvailableMonths(sorted);
         }
       });
+    
+    fetch("http://localhost:8000/units", { headers: { "Authorization": `Bearer ${user.token}` } })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) setUnits(data.data);
+      });
   }, [user]);
 
   useEffect(() => {
@@ -36,18 +44,20 @@ export default function Analytics() {
     setLoading(true);
 
     let queryParams = "";
-    if (startMonth || endMonth) {
+    if (startMonth || endMonth || unitId) {
       const params = new URLSearchParams();
       if (startMonth) params.append("start_month", startMonth);
       if (endMonth) params.append("end_month", endMonth);
+      if (unitId) params.append("unit_id", unitId);
       queryParams = `?${params.toString()}`;
     }
 
     Promise.all([
       fetch(`http://localhost:8000/analytics/kpis${queryParams}`, { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json()),
       fetch(`http://localhost:8000/analytics/trends${queryParams}`, { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json()),
-      fetch(`http://localhost:8000/analytics/offenders${queryParams}`, { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json())
-    ]).then(([kpiData, trendData, offenderData]) => {
+      fetch(`http://localhost:8000/analytics/offenders${queryParams}`, { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json()),
+      fetch(`http://localhost:8000/analytics/units/cost${queryParams}`, { headers: { "Authorization": `Bearer ${user.token}` } }).then(res => res.json())
+    ]).then(([kpiData, trendData, offenderData, costData]) => {
       if (kpiData.success) setKpis(kpiData.data);
       if (trendData.success) {
          const sorted = trendData.data.sort((a,b) => {
@@ -59,9 +69,10 @@ export default function Analytics() {
          setTrends(sorted);
       }
       if (offenderData.success) setOffenders(offenderData.data);
+      if (costData && costData.success) setUnitCosts(costData.data);
     }).finally(() => setLoading(false));
 
-  }, [user]);
+  }, [user, startMonth, endMonth, unitId]);
 
   if (loading || !kpis) {
       return (
@@ -104,8 +115,17 @@ export default function Analytics() {
               ))}
             </select>
           </div>
+          <div>
+            <label className="data-label">Linked Unit</label>
+            <select className="data-input" value={unitId} onChange={e => setUnitId(e.target.value)}>
+              <option value="">All Units...</option>
+              {units.map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="btn btn-secondary" onClick={() => { setStartMonth(""); setEndMonth(""); }}>Clear Filters</button>
+            <button className="btn btn-secondary" onClick={() => { setStartMonth(""); setEndMonth(""); setUnitId(""); }}>Clear Filters</button>
           </div>
         </div>
       </div>
@@ -123,6 +143,27 @@ export default function Analytics() {
             <h4 style={{margin: "0 0 0.5rem 0", color: "#475569", fontSize: "0.9rem", textTransform: "uppercase"}}>Average Energy Tariff</h4>
             <h2 style={{margin: 0, color: "#334155", fontSize: "2rem"}}>R$ {kpis.average_tariff.toLocaleString('pt-BR', {minimumFractionDigits: 4})} <span style={{fontSize: "1rem", color: "#94a3b8"}}>/kWh</span></h2>
          </div>
+      </div>
+
+      <div style={{display: "flex", flexWrap: "wrap", gap: "2rem", marginBottom: "3rem"}}>
+          <div style={{flex: "1 1 500px", minWidth: 0, background: "#fff", padding: "1.5rem", borderRadius: "12px", border: "1px solid var(--border-color)"}}>
+            <h3 style={{marginTop: 0, color: "var(--primary-color)"}}>Total Cost per Unit</h3>
+            {(!unitCosts || unitCosts.length === 0) ? (
+                <p style={{fontStyle: "italic", color: "#94a3b8", textAlign: "center", marginTop: "4rem"}}>No cost data available.</p>
+            ) : (
+                <div style={{width: "100%", height: 350}}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={unitCosts} margin={{ top: 20, right: 30, left: 20, bottom: 65 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="unit" tick={{fontSize: 11}} angle={-45} textAnchor="end" interval={0} />
+                            <YAxis tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`} />
+                            <Tooltip formatter={(value) => value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} />
+                            <Bar dataKey="total" name="Overall Financial Energy Cost" fill="var(--primary-color)" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
+          </div>
       </div>
 
       <div style={{display: "flex", flexWrap: "wrap", gap: "2rem", marginBottom: "3rem"}}>
