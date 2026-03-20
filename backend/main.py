@@ -25,3 +25,13 @@ app.include_router(bills_router)
 app.include_router(units_router)
 app.include_router(analytics_router)
 app.include_router(auth_router)
+
+if __name__ == "__main__":
+    import uvicorn
+    import os
+    
+    # O Render disponibiliza a variável PORT (por padrão 10000, mas pode mudar).
+    # O host 0.0.0.0 é obrigatório no Render para expor para fora do container.
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port)
+
