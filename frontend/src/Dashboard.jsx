@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import API_URL from './config';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -21,7 +22,7 @@ export default function Dashboard() {
   const fetchBills = useCallback(() => {
     if (!user) return;
     setLoading(true);
-    let url = new URL("http://localhost:8000/bills");
+    let url = new URL(`${API_URL}/bills`);
     if (filterMonth) url.searchParams.append("reference_month", filterMonth);
     if (filterCode) url.searchParams.append("installation_code", filterCode);
     if (filterUnit) url.searchParams.append("unit_id", filterUnit);
@@ -42,7 +43,7 @@ export default function Dashboard() {
 
   const fetchUnits = useCallback(() => {
     if (!user) return;
-    fetch("http://localhost:8000/units", {
+    fetch(`${API_URL}/units`, {
       headers: { "Authorization": `Bearer ${user.token}` }
     })
       .then(res => res.json())
@@ -53,11 +54,11 @@ export default function Dashboard() {
 
   const fetchFilters = useCallback(() => {
     if (!user) return;
-    fetch("http://localhost:8000/bills/months", { headers: { "Authorization": `Bearer ${user.token}` } })
+    fetch(`${API_URL}/bills/months`, { headers: { "Authorization": `Bearer ${user.token}` } })
       .then(res => res.json())
       .then(data => data.success && setAvailableMonths(data.data));
 
-    fetch("http://localhost:8000/bills/installations", { headers: { "Authorization": `Bearer ${user.token}` } })
+    fetch(`${API_URL}/bills/installations`, { headers: { "Authorization": `Bearer ${user.token}` } })
       .then(res => res.json())
       .then(data => data.success && setAvailableCodes(data.data));
   }, [user]);
@@ -72,7 +73,7 @@ export default function Dashboard() {
     if (!window.confirm("Are you sure you want to delete this bill and all its items?")) return;
 
     try {
-      const res = await fetch(`http://localhost:8000/bills/${id}`, {
+      const res = await fetch(`${API_URL}/bills/${id}`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${user.token}` }
       });
@@ -90,7 +91,7 @@ export default function Dashboard() {
   const handleExport = async () => {
     if (!user) return;
     setLoadingExport(true);
-    let url = new URL("http://localhost:8000/bills/export");
+    let url = new URL(`${API_URL}/bills/export`);
     if (filterMonth) url.searchParams.append("reference_month", filterMonth);
     if (filterCode) url.searchParams.append("installation_code", filterCode);
     if (filterUnit) url.searchParams.append("unit_id", filterUnit);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import API_URL from './config';
 
 export default function App() {
   const { user } = useAuth();
@@ -17,7 +18,7 @@ export default function App() {
   // Buscar descrições já existentes para popular o datalist
   useEffect(() => {
     if (!user) return;
-    fetch("http://localhost:8000/bill-items/descriptions", {
+    fetch(`${API_URL}/bill-items/descriptions`, {
       headers: { "Authorization": `Bearer ${user.token}` }
     })
       .then(res => res.json())
@@ -49,7 +50,7 @@ export default function App() {
     });
 
     try {
-      const response = await fetch("http://localhost:8000/upload", {
+      const response = await fetch(`${API_URL}/upload`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${user.token}`
@@ -103,17 +104,17 @@ export default function App() {
         const bill = parsedBills[i];
         
         try {
-            let endpoint = "http://localhost:8000/bills";
+            let endpoint = `${API_URL}/bills`;
             let method = "POST";
             
             // Check if it already exists to overwrite it instead of duplicating
             if (bill.installation_code && bill.reference_month) {
-                const checkRes = await fetch(`http://localhost:8000/bills/check?installation_code=${bill.installation_code}&reference_month=${encodeURIComponent(bill.reference_month)}`, {
+                const checkRes = await fetch(`${API_URL}/bills/check?installation_code=${bill.installation_code}&reference_month=${encodeURIComponent(bill.reference_month)}`, {
                     headers: { "Authorization": `Bearer ${user.token}` }
                 });
                 const checkData = await checkRes.json();
                 if (checkData.success && checkData.exists) {
-                    endpoint = `http://localhost:8000/bills/${checkData.bill_id}`;
+                    endpoint = `${API_URL}/bills/${checkData.bill_id}`;
                     method = "PUT";
                 }
             }
@@ -171,7 +172,7 @@ export default function App() {
       let isReplace = false;
       let replaceId = null;
       if (currentData.installation_code && currentData.reference_month) {
-        const checkRes = await fetch(`http://localhost:8000/bills/check?installation_code=${currentData.installation_code}&reference_month=${encodeURIComponent(currentData.reference_month)}`, {
+        const checkRes = await fetch(`${API_URL}/bills/check?installation_code=${currentData.installation_code}&reference_month=${encodeURIComponent(currentData.reference_month)}`, {
           headers: { "Authorization": `Bearer ${user.token}` }
         });
         const checkData = await checkRes.json();
@@ -187,7 +188,7 @@ export default function App() {
         }
       }
 
-      const endpoint = isReplace ? `http://localhost:8000/bills/${replaceId}` : "http://localhost:8000/bills";
+      const endpoint = isReplace ? `${API_URL}/bills/${replaceId}` : `${API_URL}/bills`;
       const method = isReplace ? "PUT" : "POST";
 
       const response = await fetch(endpoint, {

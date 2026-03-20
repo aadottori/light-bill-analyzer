@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import API_URL from './config';
 
 export default function Units() {
   const { user } = useAuth();
@@ -24,7 +25,7 @@ export default function Units() {
   const fetchUnits = () => {
     if (!user) return;
     setLoading(true);
-    fetch("http://localhost:8000/units", {
+    fetch(`${API_URL}/units`, {
       headers: { "Authorization": `Bearer ${user.token}` }
     })
       .then(res => res.json())
@@ -53,7 +54,7 @@ export default function Units() {
 
     setSaving(true);
     try {
-      const response = await fetch("http://localhost:8000/units", {
+      const response = await fetch(`${API_URL}/units`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -88,7 +89,7 @@ export default function Units() {
 
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/units/${id}`, {
+      const res = await fetch(`${API_URL}/units/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${user.token}` },
         body: JSON.stringify({ name: editName, installation_code: editCode })
@@ -112,7 +113,7 @@ export default function Units() {
 
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/units/${id}`, {
+      const res = await fetch(`${API_URL}/units/${id}`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${user.token}` }
       });

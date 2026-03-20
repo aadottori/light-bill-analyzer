@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import API_URL from './config';
 
 export default function Analytics() {
   const { user } = useAuth();
@@ -31,7 +32,7 @@ export default function Analytics() {
 
   useEffect(() => {
     if (!user) return;
-    fetch("http://localhost:8000/bills/months", { headers: { "Authorization": `Bearer ${user.token}` } })
+    fetch(`${API_URL}/bills/months`, { headers: { "Authorization": `Bearer ${user.token}` } })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -39,7 +40,7 @@ export default function Analytics() {
         }
       });
     
-    fetch("http://localhost:8000/units", { headers: { "Authorization": `Bearer ${user.token}` } })
+    fetch(`${API_URL}/units`, { headers: { "Authorization": `Bearer ${user.token}` } })
       .then(res => res.json())
       .then(data => {
         if (data.success) setUnits(data.data);
@@ -62,13 +63,13 @@ export default function Analytics() {
     const h = { "Authorization": `Bearer ${user.token}` };
 
     Promise.all([
-      fetch(`http://localhost:8000/analytics/kpis${queryParams}`, { headers: h }).then(res => res.json()),
-      fetch(`http://localhost:8000/analytics/trends${queryParams}`, { headers: h }).then(res => res.json()),
-      fetch(`http://localhost:8000/analytics/offenders${queryParams}`, { headers: h }).then(res => res.json()),
-      fetch(`http://localhost:8000/analytics/units/cost${queryParams}`, { headers: h }).then(res => res.json()),
-      fetch(`http://localhost:8000/analytics/reactive/units${queryParams}`, { headers: h }).then(res => res.json()),
-      fetch(`http://localhost:8000/analytics/demand${queryParams}`, { headers: h }).then(res => res.json()),
-      fetch(`http://localhost:8000/analytics/monthly-breakdown${queryParams}`, { headers: h }).then(res => res.json()),
+      fetch(`${API_URL}/analytics/kpis${queryParams}`, { headers: h }).then(res => res.json()),
+      fetch(`${API_URL}/analytics/trends${queryParams}`, { headers: h }).then(res => res.json()),
+      fetch(`${API_URL}/analytics/offenders${queryParams}`, { headers: h }).then(res => res.json()),
+      fetch(`${API_URL}/analytics/units/cost${queryParams}`, { headers: h }).then(res => res.json()),
+      fetch(`${API_URL}/analytics/reactive/units${queryParams}`, { headers: h }).then(res => res.json()),
+      fetch(`${API_URL}/analytics/demand${queryParams}`, { headers: h }).then(res => res.json()),
+      fetch(`${API_URL}/analytics/monthly-breakdown${queryParams}`, { headers: h }).then(res => res.json()),
     ]).then(([kpiData, trendData, offenderData, costData, reactiveData, demandResp, breakdownResp]) => {
       if (kpiData.success) setKpis(kpiData.data);
       if (trendData.success) setTrends(sortMonths(trendData.data));

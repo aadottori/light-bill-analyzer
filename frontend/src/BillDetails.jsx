@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import API_URL from './config';
 
 export default function BillDetails() {
   const { id } = useParams();
@@ -12,7 +13,7 @@ export default function BillDetails() {
 
   useEffect(() => {
     if (!user) return;
-    fetch(`http://localhost:8000/bills/${id}`, {
+    fetch(`${API_URL}/bills/${id}`, {
       headers: { "Authorization": `Bearer ${user.token}` }
     })
       .then(res => res.json())

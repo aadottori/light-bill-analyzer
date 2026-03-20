@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import API_URL from './config';
 
 export default function BillEdit() {
   const { id } = useParams();
@@ -17,7 +18,7 @@ export default function BillEdit() {
     if (!user) return;
     
     // Fetch Invoice
-    fetch(`http://localhost:8000/bills/${id}`, {
+    fetch(`${API_URL}/bills/${id}`, {
       headers: { "Authorization": `Bearer ${user.token}` }
     })
       .then(res => res.json())
@@ -32,7 +33,7 @@ export default function BillEdit() {
       .finally(() => setLoading(false));
 
     // Fetch Categories
-    fetch("http://localhost:8000/bill-items/descriptions", {
+    fetch(`${API_URL}/bill-items/descriptions`, {
       headers: { "Authorization": `Bearer ${user.token}` }
     })
       .then(res => res.json())
@@ -66,7 +67,7 @@ export default function BillEdit() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const res = await fetch(`http://localhost:8000/bills/${id}`, {
+      const res = await fetch(`${API_URL}/bills/${id}`, {
         method: "PUT",
         headers: { 
           "Content-Type": "application/json",

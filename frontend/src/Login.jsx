@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
+import API_URL from './config';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -19,7 +20,7 @@ export default function Login() {
 
     if (isRegistering) {
       try {
-        const res = await fetch('http://localhost:8000/signup', {
+        const res = await fetch(`${API_URL}/signup`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password, secret: secret || undefined })
