@@ -1,83 +1,118 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
-import App from './App.jsx'
-import Dashboard from './Dashboard.jsx'
-import BillDetails from './BillDetails.jsx'
-import BillEdit from './BillEdit.jsx'
-import Units from './Units.jsx'
-import Login from './Login.jsx'
-import Analytics from './Analytics.jsx'
-import { AuthProvider, useAuth } from './AuthContext.jsx'
-import './index.css'
+import React, { useEffect, useState } from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import App from "./App.jsx";
+import Dashboard from "./Dashboard.jsx";
+import BillDetails from "./BillDetails.jsx";
+import BillEdit from "./BillEdit.jsx";
+import Units from "./Units.jsx";
+import Login from "./Login.jsx";
+import Analytics from "./Analytics.jsx";
+import { AuthProvider, useAuth } from "./AuthContext.jsx";
+import { Icon, ToastProvider } from "./components.jsx";
+import "./index.css";
 
-function Header() {
+const ROLE_LABEL = { admin: "Administrador", viewer: "Somente leitura" };
+
+function Sidebar({ open, onNavigate }) {
   const { user, logout } = useAuth();
-  
+  const isAdmin = user?.role === "admin";
+  const link = ({ isActive }) => `nav-link${isActive ? " active" : ""}`;
+
   return (
-    <header className="header" style={{ position: 'relative' }}>
-      <h1 style={{margin: 0, fontSize: '1.5rem', color: 'var(--primary-color)'}}>UFRJ Energia</h1>
-      <nav className="header-nav">
-        <Link to="/" className="nav-link">History Dashboard</Link>
-        <Link to="/analytics" className="nav-link">Analytics</Link>
-        {user?.role === 'admin' && (
+    <aside className={`sidebar${open ? " open" : ""}`}>
+      <NavLink to="/" className="brand" onClick={onNavigate}>
+        <span className="brand-mark"><Icon name="bolt" size={18} strokeWidth={2} /></span>
+        <span>
+          <span className="brand-name">UFRJ Energia</span><br />
+          <span className="brand-sub">Gestão de faturas de energia</span>
+        </span>
+      </NavLink>
+
+      <nav className="nav" onClick={onNavigate}>
+        <span className="nav-section">Consulta</span>
+        <NavLink to="/" end className={link}><Icon name="list" /> Faturas</NavLink>
+        <NavLink to="/analytics" className={link}><Icon name="chart" /> Análises</NavLink>
+        {isAdmin && (
           <>
-            <Link to="/upload" className="nav-link">New Bill</Link>
-            <Link to="/units" className="nav-link">Linked Units</Link>
+            <span className="nav-section">Administração</span>
+            <NavLink to="/upload" className={link}><Icon name="upload" /> Importar faturas</NavLink>
+            <NavLink to="/units" className={link}><Icon name="building" /> Unidades</NavLink>
           </>
         )}
       </nav>
-      <div className="auth-status">
-        {user ? (
-          <>
-            <span className="auth-role-badge">{user.role}</span>
-            <button onClick={logout} style={{background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', textDecoration: 'underline'}}>Log out</button>
-          </>
-        ) : (
-          <Link to="/login" className="btn btn-primary" style={{padding: '0.4rem 1rem', fontSize: '0.9rem'}}>Log In</Link>
-        )}
-      </div>
-    </header>
+
+      {user && (
+        <div className="sidebar-footer">
+          <div className="user">
+            <span className="avatar">{user.username?.slice(0, 2)}</span>
+            <div style={{ minWidth: 0 }}>
+              <div className="user-name">{user.username}</div>
+              <div className="user-role">{ROLE_LABEL[user.role] || user.role}</div>
+            </div>
+            <button className="icon-btn" onClick={logout} title="Sair" aria-label="Sair">
+              <Icon name="logout" />
+            </button>
+          </div>
+        </div>
+      )}
+    </aside>
   );
 }
 
 function ProtectedRoute({ children, reqRole }) {
   const { user } = useAuth();
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-  if (reqRole && user.role !== reqRole) {
-    return <Navigate to="/" replace />;
-  }
+  if (!user) return <Navigate to="/login" replace />;
+  if (reqRole && user.role !== reqRole) return <Navigate to="/" replace />;
   return children;
 }
 
-function Layout() {
+function Shell({ children }) {
+  const [open, setOpen] = useState(false);
+  const location = useLocation();
+  useEffect(() => { window.scrollTo(0, 0); }, [location.pathname]);
+
   return (
-    <div className="app-container">
-      <Header />
-      
-      <main className="main-content">
-        <Routes>
-          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/upload" element={<ProtectedRoute reqRole="admin"><App /></ProtectedRoute>} />
-          <Route path="/units" element={<ProtectedRoute reqRole="admin"><Units /></ProtectedRoute>} />
-          <Route path="/bill/:id" element={<ProtectedRoute><BillDetails /></ProtectedRoute>} />
-          <Route path="/bill/:id/edit" element={<ProtectedRoute reqRole="admin"><BillEdit /></ProtectedRoute>} />
-          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-        </Routes>
-      </main>
+    <div className="shell">
+      <Sidebar open={open} onNavigate={() => setOpen(false)} />
+      {open && <div className="scrim" onClick={() => setOpen(false)} />}
+      <div className="content">
+        <div className="topbar">
+          <button className="icon-btn" onClick={() => setOpen(true)} aria-label="Abrir menu"><Icon name="menu" /></button>
+          <strong>UFRJ Energia</strong>
+        </div>
+        <main className="content-inner">{children}</main>
+      </div>
     </div>
-  )
+  );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+function Layout() {
+  const { user } = useAuth();
+  const page = (el, role) => <ProtectedRoute reqRole={role}><Shell>{el}</Shell></ProtectedRoute>;
+
+  return (
+    <Routes>
+      <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/" element={page(<Dashboard />)} />
+      <Route path="/analytics" element={page(<Analytics />)} />
+      <Route path="/upload" element={page(<App />, "admin")} />
+      <Route path="/units" element={page(<Units />, "admin")} />
+      <Route path="/bill/:id" element={page(<BillDetails />)} />
+      <Route path="/bill/:id/edit" element={page(<BillEdit />, "admin")} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <Layout />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <Layout />
+        </AuthProvider>
+      </ToastProvider>
     </BrowserRouter>
   </React.StrictMode>,
-)
+);

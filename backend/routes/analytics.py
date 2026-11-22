@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 from backend.database import get_db
 from backend.models import Bill, BillItem, Unit, User
 from backend.auth import get_current_user
@@ -62,14 +62,20 @@ async def get_analytics_kpis(
         BillItem.description.ilike("%Reativ%")
     ).scalar() or 0.0
     
+    # Só energia ativa: reativo, ultrapassagem e demanda também têm "Ponta" no nome
     peak_cost = db.query(func.sum(BillItem.amount)).filter(
         BillItem.bill_id.in_(valid_ids),
-        (BillItem.description.ilike("%Ponta%") & ~BillItem.description.ilike("%Fora%"))
+        BillItem.description.ilike("Energia Ativa%Ponta%") & ~BillItem.description.ilike("%Fora%")
     ).scalar() or 0.0
     
     off_peak_cost = db.query(func.sum(BillItem.amount)).filter(
         BillItem.bill_id.in_(valid_ids),
-        BillItem.description.ilike("%Fora Ponta%")
+        BillItem.description.ilike("Energia Ativa%Fora Ponta%")
+    ).scalar() or 0.0
+
+    overage_total = db.query(func.sum(BillItem.amount)).filter(
+        BillItem.bill_id.in_(valid_ids),
+        BillItem.description.ilike("%Ultrapassagem%")
     ).scalar() or 0.0
 
     energy_sum = db.query(func.sum(BillItem.amount)).filter(
@@ -91,7 +97,8 @@ async def get_analytics_kpis(
             "total_reactive": float(reactive_total),
             "peak_cost": float(peak_cost),
             "off_peak_cost": float(off_peak_cost),
-            "average_tariff": float(avg_tariff)
+            "average_tariff": float(avg_tariff),
+            "total_overage": float(overage_total)
         }
     }
 
@@ -191,26 +198,71 @@ async def get_demand_analysis(
     """Demand analysis: contracted vs consumed per building unit."""
     valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
 
-    # Group demand items by unit and get avg quantity (contracted) and avg consumption 
-    results = db.query(
+    # Custo dos itens de demanda ativa (inclui ultrapassagem), sem a demanda reativa
+    costs = db.query(
         Unit.name,
-        func.avg(BillItem.quantity).label("avg_contracted"),
         func.sum(BillItem.amount).label("total_demand_cost"),
-        func.count(BillItem.id).label("bill_count")
     ).select_from(BillItem).join(Bill).join(Unit).filter(
         BillItem.bill_id.in_(valid_ids),
-        BillItem.description.ilike("%Demanda%")
-    ).group_by(Unit.name).order_by(func.sum(BillItem.amount).desc()).all()
-    
+        BillItem.description.ilike("%Demanda%"),
+        ~BillItem.description.ilike("%Reativa%")
+    ).group_by(Unit.name).all()
+
+    # Demandas contratada e medida médias, a partir das colunas da fatura
+    demands = {r[0]: r for r in db.query(
+        Unit.name,
+        func.avg(Bill.contracted_demand_kw),
+        func.avg(Bill.measured_demand_kw),
+        func.count(Bill.id)
+    ).select_from(Bill).join(Unit).filter(
+        Bill.id.in_(valid_ids)
+    ).group_by(Unit.name).all()}
+
     formatted = []
-    for r in results:
-        if r[1] and r[1] > 0:
-            formatted.append({
-                "unit": r[0] or "Unknown",
-                "avg_contracted_kw": round(float(r[1]), 1),
-                "total_cost": round(float(r[2]), 2) if r[2] else 0.0,
-                "bills": int(r[3])
-            })
+    for name, cost in costs:
+        if not cost or cost <= 0:
+            continue
+        d = demands.get(name)
+        formatted.append({
+            "unit": name or "Unknown",
+            "avg_contracted_kw": round(float(d[1]), 1) if d and d[1] is not None else None,
+            "avg_measured_kw": round(float(d[2]), 1) if d and d[2] is not None else None,
+            "total_cost": round(float(cost), 2),
+            "bills": int(d[3]) if d else 0
+        })
+    formatted.sort(key=lambda x: x["total_cost"], reverse=True)
+    return {"success": True, "data": formatted}
+
+
+@router.get("/analytics/avoidable/units")
+async def get_avoidable_per_unit(
+    start_month: Optional[str] = None,
+    end_month: Optional[str] = None,
+    unit_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Custos evitáveis por unidade: reativo excedente (energia e demanda) e ultrapassagem."""
+    valid_ids = get_valid_bill_ids(db, start_month, end_month, unit_id)
+    is_reactive = BillItem.description.ilike("%Reativ%")
+    is_overage = BillItem.description.ilike("%Ultrapassagem%")
+
+    rows = db.query(
+        Unit.name,
+        func.sum(case((is_reactive, BillItem.amount), else_=0)),
+        func.sum(case((is_overage, BillItem.amount), else_=0)),
+    ).select_from(BillItem).join(Bill).join(Unit).filter(
+        BillItem.bill_id.in_(valid_ids),
+        is_reactive | is_overage
+    ).group_by(Unit.name).all()
+
+    formatted = [{
+        "unit": r[0] or "Unknown",
+        "reactive": round(float(r[1] or 0), 2),
+        "overage": round(float(r[2] or 0), 2),
+        "total": round(float((r[1] or 0) + (r[2] or 0)), 2),
+    } for r in rows if (r[1] or 0) + (r[2] or 0) > 0]
+    formatted.sort(key=lambda x: x["total"], reverse=True)
     return {"success": True, "data": formatted}
 
 @router.get("/analytics/monthly-breakdown")
@@ -243,12 +295,13 @@ async def get_monthly_breakdown(
         amt = float(total) if total else 0.0
         desc_lower = (desc or "").lower()
         
-        if "energia" in desc_lower:
-            monthly[m]["energy"] += amt
+        # Ordem importa: "Energia Reativa" e "Demanda Reativa" são reativo, não energia/demanda
+        if "reativ" in desc_lower:
+            monthly[m]["reactive"] += amt
         elif "demanda" in desc_lower:
             monthly[m]["demand"] += amt
-        elif "reativ" in desc_lower:
-            monthly[m]["reactive"] += amt
+        elif "energia" in desc_lower or "disponibilidade" in desc_lower:
+            monthly[m]["energy"] += amt
         elif any(k in desc_lower for k in ["imposto", "contribui", "débito var", "debito var"]):
             monthly[m]["taxes"] += amt
         elif "bandeira" in desc_lower or "adicional" in desc_lower:

@@ -37,9 +37,9 @@ export function AuthProvider({ children }) {
         navigate("/");
         return { success: true };
       }
-      return { success: false, error: data.detail || "Login failed" };
+      return { success: false, error: data.detail || "Não foi possível entrar." };
     } catch (err) {
-      return { success: false, error: "Server unavailable" };
+      return { success: false, error: "Servidor indisponível. Tente novamente em alguns instantes." };
     }
   };
 
