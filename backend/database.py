@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
@@ -9,10 +10,16 @@ load_dotenv()
 # Example: postgresql://user:password@localhost:5432/ufrj_energia
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ufrj_energia_mock.db") # Fallback to SQLite for easy local dev if Postgres isn't up yet
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    connect_args={"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
-)
+def _connect_args(url: str) -> dict:
+    if url.startswith("sqlite"):
+        return {"check_same_thread": False}
+    # O pooler do Supabase em modo transação (porta 6543) não suporta prepared
+    # statements; o psycopg 3 os cria automaticamente, então são desativados.
+    if make_url(url).get_driver_name() == "psycopg":
+        return {"prepare_threshold": None}
+    return {}
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=_connect_args(SQLALCHEMY_DATABASE_URL))
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

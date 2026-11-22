@@ -194,9 +194,9 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
             "Imposto Retido CSLL (Energia)": r"Imposto\s*Retido\s*CSLL\s*-\s*Energia.*?([-\d.,]+,\d{2})(?!\d)",
             "Contribuição Iluminação Pública": r"Contrib\s*Ilum\s*P[úu]blica\s*(?:Municipal)?.*?([\d.,]+,\d{2})(?!\d)",
             "Débito Var IPCA": r"D[ÉE]BITO\s*VAR\s*IPCA.*?([-\d.,]+,\d{2})(?!\d)",
-            "Adicional Bandeiras": r"Adicional\s*Bandeiras.*?([-\d.,]+,\d{2})(?!\d)",
-            "Bandeira Vermelha": r"Bandeira\s*Vermelha.*?([-\d.,]+,\d{2})(?!\d)",
-            "Bandeira Amarela": r"Bandeira\s*Amarela.*?([-\d.,]+,\d{2})(?!\d)",
+            # Bandeiras tarifárias não entram como item: a fatura as mostra num quadro
+            # informativo ("Adicional Bandeiras - Já incluído no Valor a Pagar"), com o
+            # valor já embutido nos itens de energia. Somá-las contaria o custo duas vezes.
         }
         for desc, regex in impostos.items():
             match = re.search(regex, text)
