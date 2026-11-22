@@ -1,3 +1,5 @@
+import hmac
+import os
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -22,8 +24,11 @@ async def signup(user: UserLogin, db: Session = Depends(get_db)):
     
     hashed = get_password_hash(user.password)
     
+    # Cadastro como admin só com o segredo definido em ADMIN_SIGNUP_SECRET. Sem a
+    # variável, todo cadastro novo é "viewer".
     role = "viewer"
-    if user.secret == "tcc":
+    admin_secret = os.getenv("ADMIN_SIGNUP_SECRET")
+    if admin_secret and user.secret and hmac.compare_digest(user.secret, admin_secret):
         role = "admin"
         
     new_user = User(username=user.username, hashed_password=hashed, role=role)

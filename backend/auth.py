@@ -9,8 +9,20 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models import User
 
-# Configurações de Segurança do JWT
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "b339f4e2f9d51e7fb2a9d9c2a382e8f1bb8242b9d88ab2956cfef") # Ideal: colocar num arquivo .env
+from backend.database import SQLALCHEMY_DATABASE_URL
+
+# Configurações de Segurança do JWT. Em produção a chave é obrigatória: com uma chave
+# conhecida, qualquer pessoa poderia assinar tokens de administrador.
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+        SECRET_KEY = "chave-apenas-para-desenvolvimento-local"
+        print("Aviso: JWT_SECRET_KEY não definida; usando chave de desenvolvimento local.")
+    else:
+        raise RuntimeError(
+            "JWT_SECRET_KEY não definida. Configure a variável de ambiente com uma string "
+            "aleatória longa (ex.: python -c \"import secrets; print(secrets.token_urlsafe(48))\")."
+        )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days (para facilitar o tcc)
 
