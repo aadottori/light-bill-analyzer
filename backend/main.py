@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.database import engine, Base
+from backend.database import engine, Base, add_missing_columns
 
 from backend.routes.bills import router as bills_router
 from backend.routes.units import router as units_router
@@ -9,6 +9,7 @@ from backend.routes.auth_routes import router as auth_router
 
 # Criar tabelas no banco de dados
 Base.metadata.create_all(bind=engine)
+add_missing_columns()
 
 app = FastAPI(title="UFRJ PDF Parser API")
 

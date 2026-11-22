@@ -1,10 +1,12 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from backend.database import get_db
-from backend.models import BillCreate, Bill, BillItem, Unit, User
+from backend.models import BillCreate, Bill, BillItem, Unit, User, AiCompareRequest, AiConfigInput, BILL_DEMAND_FIELDS
 from backend.auth import get_current_admin_user, get_current_user
 from backend.parser import parse_pdf
+from backend.ai_parser import parse_pdf_ai, get_api_key
+from backend.reconciler import reconcile_extractions
 from typing import Optional
 from datetime import datetime
 import os
@@ -30,6 +32,19 @@ def db_parse_numeric(val: str):
     except:
         return None
 
+def apply_demand_fields(db_bill: Bill, bill_in: BillCreate):
+    db_bill.tariff_modality = bill_in.tariff_modality
+    for field in BILL_DEMAND_FIELDS:
+        setattr(db_bill, field, db_parse_numeric(getattr(bill_in, field)))
+
+def demand_fields_out(bill: Bill) -> dict:
+    out = {"tariff_modality": bill.tariff_modality}
+    for field in BILL_DEMAND_FIELDS:
+        val = getattr(bill, field)
+        # Formato brasileiro, como os demais campos editáveis, para o round-trip do PUT
+        out[field] = f"{float(val):.2f}".replace(".", ",") if val is not None else None
+    return out
+
 def db_parse_date(val: str):
     if not val:
         return None
@@ -42,7 +57,12 @@ def db_parse_date(val: str):
 # --- Upload ---
 
 @router.post("/upload")
-async def upload_pdf(files: list[UploadFile] = File(...), current_user: User = Depends(get_current_admin_user)):
+async def upload_pdf(
+    files: list[UploadFile] = File(...), 
+    use_ai: bool = Query(False),
+    api_key: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_admin_user)
+):
     results = []
     
     for file in files:
@@ -57,9 +77,30 @@ async def upload_pdf(files: list[UploadFile] = File(...), current_user: User = D
             shutil.copyfileobj(file.file, buffer)
             
         try:
-            extracted_data = parse_pdf(file_path)
-            extracted_data["original_file_name"] = file.filename
-            results.append({"filename": file.filename, "success": True, "data": extracted_data})
+            # 1. Interpretação padrão pelo parser local (regex)
+            regex_data = parse_pdf(file_path)
+            regex_data["original_file_name"] = file.filename
+            regex_data["_file_path"] = file_path
+            
+            final_data = regex_data
+            reconciliation_result = None
+            
+            # 2. Se a opção de IA estiver ativa, realiza extração paralela no Google AI Studio
+            if use_ai:
+                ai_res = parse_pdf_ai(file_path, api_key=api_key)
+                if ai_res.get("success") and ai_res.get("data"):
+                    reconciliation = reconcile_extractions(regex_data, ai_res["data"])
+                    final_data = reconciliation["active_data"]
+                    final_data["original_file_name"] = file.filename
+                    final_data["_file_path"] = file_path
+                    reconciliation_result = reconciliation
+
+            results.append({
+                "filename": file.filename, 
+                "success": True, 
+                "data": final_data,
+                "reconciliation": reconciliation_result
+            })
         except Exception as e:
             results.append({"filename": file.filename, "success": False, "error": str(e)})
 
@@ -97,7 +138,8 @@ async def save_bill(bill_in: BillCreate, db: Session = Depends(get_db), current_
         imported_by=current_user.username,
         original_file_name=bill_in.original_file_name
     )
-    
+    apply_demand_fields(db_bill, bill_in)
+
     for item in bill_in.items:
         db_item = BillItem(
             description=item.description,
@@ -124,7 +166,8 @@ async def update_bill(bill_id: int, bill_in: BillCreate, db: Session = Depends(g
     db_bill.reference_month = bill_in.reference_month
     db_bill.due_date = db_parse_date(bill_in.due_date)
     db_bill.total_amount = db_parse_numeric(bill_in.total_amount)
-    
+    apply_demand_fields(db_bill, bill_in)
+
     unit_id = bill_in.unit_id
     if unit_id is None and bill_in.installation_code:
         unit = db.query(Unit).filter(Unit.installation_code == bill_in.installation_code).first()
@@ -305,6 +348,7 @@ async def get_bill_details(bill_id: int, db: Session = Depends(get_db), current_
             "imported_at": bill.imported_at,
             "imported_by": bill.imported_by,
             "original_file_name": bill.original_file_name,
+            **demand_fields_out(bill),
             "items": [
                 {
                     "description": item.description,
@@ -321,3 +365,97 @@ async def list_distinct_descriptions(db: Session = Depends(get_db), current_user
     descriptions = db.query(BillItem.description).distinct().all()
     clean_list = [desc[0] for desc in descriptions if desc[0]] 
     return {"success": True, "data": clean_list}
+
+
+# --- Integração com IA (Google AI Studio / Gemini) ---
+
+@router.post("/bills/compare-ai")
+async def compare_bill_with_ai(
+    req: AiCompareRequest, 
+    current_user: User = Depends(get_current_admin_user)
+):
+    """
+    Executa a leitura da fatura pelo Google AI Studio e realiza o confronto (reconciliação)
+    com o interpretador local existente, determinando a melhor leitura e detalhando divergências.
+    """
+    target_path = None
+    if req.file_path and os.path.exists(req.file_path):
+        target_path = req.file_path
+    elif req.original_file_name:
+        for fname in os.listdir(UPLOAD_DIR):
+            if fname.endswith(req.original_file_name):
+                target_path = os.path.join(UPLOAD_DIR, fname)
+                break
+                
+    if not target_path or not os.path.exists(target_path):
+        raise HTTPException(
+            status_code=404, 
+            detail="Arquivo PDF da fatura não foi encontrado no servidor para reanálise."
+        )
+
+    # 1. Leitura pelo interpretador local (Regex)
+    regex_data = parse_pdf(target_path)
+    regex_data["original_file_name"] = req.original_file_name
+    regex_data["_file_path"] = target_path
+
+    # 2. Leitura por IA (Google AI Studio)
+    ai_res = parse_pdf_ai(target_path, api_key=req.api_key, model_name=req.model_name)
+    if not ai_res.get("success"):
+        return {
+            "success": False,
+            "error": ai_res.get("error", "Erro ao comunicar com Google AI Studio."),
+            "regex_data": regex_data,
+            "ai_data": None
+        }
+
+    ai_data = ai_res["data"]
+    ai_data["original_file_name"] = req.original_file_name
+    ai_data["_file_path"] = target_path
+
+    # 3. Bate os dados das duas abordagens e calcula o vencedor
+    reconciliation = reconcile_extractions(regex_data, ai_data)
+    
+    return {
+        "success": True,
+        "model": ai_res.get("model"),
+        "reconciliation": reconciliation
+    }
+
+@router.get("/ai/config")
+async def get_ai_config(current_user: User = Depends(get_current_user)):
+    """Informa se a chave da API do Google AI Studio está configurada."""
+    key = get_api_key()
+    masked = f"{key[:4]}...{key[-4:]}" if key and len(key) >= 8 else None
+    return {
+        "success": True,
+        "has_key": bool(key),
+        "masked_key": masked,
+        "default_model": "gemini-2.5-flash"
+    }
+
+@router.post("/ai/config")
+async def set_ai_config(config_in: AiConfigInput, current_user: User = Depends(get_current_admin_user)):
+    """Permite configurar ou atualizar a GEMINI_API_KEY dinamicamente."""
+    new_key = config_in.api_key.strip()
+    if not new_key:
+        raise HTTPException(status_code=400, detail="Chave de API não pode ser vazia.")
+        
+    os.environ["GEMINI_API_KEY"] = new_key
+    
+    # Salvar em .env local se existir ou criar
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env_path = os.path.join(backend_dir, ".env")
+    try:
+        lines = []
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        lines = [l for l in lines if not l.startswith("GEMINI_API_KEY=")]
+        lines.append(f"GEMINI_API_KEY={new_key}\n")
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except Exception as e:
+        print(f"Aviso ao salvar .env: {e}")
+        
+    return {"success": True, "message": "Chave da API do Google AI Studio configurada com sucesso!"}
+

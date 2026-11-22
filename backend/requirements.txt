@@ -11,3 +11,5 @@ openpyxl
 gunicorn
 bcrypt
 python-jose[cryptography]
+google-genai
+requests

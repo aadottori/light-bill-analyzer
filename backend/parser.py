@@ -33,6 +33,13 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
         "due_date": None,
         "total_amount": None,
         "building_name": None,
+        # Modalidade tarifária e grandezas de demanda (kW). Na modalidade Verde só há
+        # demanda única, guardada nos campos sem sufixo "_peak".
+        "tariff_modality": None,
+        "contracted_demand_kw": None,
+        "contracted_demand_peak_kw": None,
+        "measured_demand_kw": None,
+        "measured_demand_peak_kw": None,
         "items": [] # Nova lista dinâmica One-to-Many
     }
     
@@ -80,11 +87,58 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
                     "amount": valor
                 })
             
+        # Linha de item no padrão "<rótulo> <unid> <quantidade> <preço unitário> <valor>"
+        ITEM_NUMS = r"\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)"
+        HFP = r"HFP\s*/\s*[ÚU]nico"
+
+        # 2b. Modalidade tarifária (ex.: "Grupo A4 / A4 - Verde")
+        mod_match = re.search(r"A\d\w*\s*-\s*(Verde|Azul)", text, re.IGNORECASE)
+        if mod_match:
+            data["tariff_modality"] = mod_match.group(1).capitalize()
+
         # 3. Demanda Ativa
         demanda_match = re.search(r"Demanda\s*Ativa\s*kWe?[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
         if demanda_match:
             add_item("Demanda Ativa", demanda_match.group(1), demanda_match.group(2), demanda_match.group(3))
-            
+
+        # 3a. Demanda Ativa de ponta (só existe na modalidade Azul)
+        demanda_hp_match = re.search(r"Demanda\s*Ativa\s*kW\s*HP\s*kW" + ITEM_NUMS, text, re.IGNORECASE)
+        if demanda_hp_match:
+            add_item("Demanda Ativa Ponta", *demanda_hp_match.groups())
+
+        # 3b. Ultrapassagem de demanda (REN 1.000/2021, art. 301), por posto tarifário
+        ult_hfp = re.search(r"Ultrapassagem\s*kW\s*" + HFP + r"\s*kW" + ITEM_NUMS, text, re.IGNORECASE)
+        if ult_hfp:
+            add_item("Ultrapassagem de Demanda Fora Ponta", *ult_hfp.groups())
+        ult_hp = re.search(r"Ultrapassagem\s*kW\s*HP\s*kW" + ITEM_NUMS, text, re.IGNORECASE)
+        if ult_hp:
+            add_item("Ultrapassagem de Demanda Ponta", *ult_hp.groups())
+
+        # 3c. Demanda contratada: quadro lateral "Demanda 98,00" (Verde) ou
+        # "Demanda Fora Ponta 136,00" / "Demanda Ponta 77,00" (Azul). O número precisa
+        # ser positivo e fechar a linha, o que exclui "Imposto Retido ... - Demanda -182,71".
+        contr_unica = re.search(r"Demanda\s+([\d.]+,\d{2})\s*$", text, re.MULTILINE)
+        contr_hfp = re.search(r"Demanda\s*Fora\s*Ponta\s+([\d.]+,\d{2})\s*$", text, re.MULTILINE)
+        contr_hp = re.search(r"Demanda\s*Ponta\s+([\d.]+,\d{2})\s*$", text, re.MULTILINE)
+        if contr_hfp:
+            data["contracted_demand_kw"] = contr_hfp.group(1)
+        elif contr_unica:
+            data["contracted_demand_kw"] = contr_unica.group(1)
+        if contr_hp:
+            data["contracted_demand_peak_kw"] = contr_hp.group(1)
+
+        # 3d. Demanda medida: quadro do medidor, última coluna (ex.:
+        # "9245187 Demanda Ativa-Kw Único 2.434 2.493 1,4237 84")
+        # Linhas com constante do medidor 0,0000 (sem número de medidor, leituras zeradas)
+        # aparecem em algumas faturas e não representam a demanda consumida: são ignoradas.
+        MEDIDOR = r"\s+[\d.,]+\s+[\d.,]+\s+(?!0,0+\s)[\d.,]+\s+([\d.,]+)\s*$"
+        med_hfp = re.search(r"Demanda\s*Ativa\s*-\s*Kw\s*(?:[ÚU]nico|Fora\s*Ponta)" + MEDIDOR, text, re.IGNORECASE | re.MULTILINE)
+        med_hp = re.search(r"Demanda\s*Ativa\s*-\s*Kw\s*Ponta" + MEDIDOR, text, re.IGNORECASE | re.MULTILINE)
+        if med_hfp:
+            data["measured_demand_kw"] = med_hfp.group(1)
+        if med_hp:
+            data["measured_demand_peak_kw"] = med_hp.group(1)
+
         # 3b. Energia Elétrica (Simples)
         energia_simples_match = re.search(r"Energia El[ée]trica\s+(?:kWh\s+){1,2}([\d.,]+)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
         if energia_simples_match:
@@ -100,10 +154,28 @@ def parse_pdf(pdf_path: str) -> Dict[str, Any]:
         if energia_hp_match:
              add_item("Energia Ativa Ponta", energia_hp_match.group(1), energia_hp_match.group(2), energia_hp_match.group(3))
             
-        # 6. Energia Reativa
-        energia_reativa_match = re.search(r"Energia\s*Reativa[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
-        if energia_reativa_match:
-            add_item("Energia Reativa", energia_reativa_match.group(1), energia_reativa_match.group(2), energia_reativa_match.group(3))
+        # 6. Energia Reativa Excedente, separada por posto tarifário. Os rótulos de item
+        # ("Energia Reativa kWh HP") não têm hífen, ao contrário das linhas do medidor
+        # ("Energia Reativa-Kwh Ponta"), que ficam de fora.
+        ere_hfp = re.search(r"Energia\s*Reativa\s*kWh\s*" + HFP + r"\s*kWh" + ITEM_NUMS, text, re.IGNORECASE)
+        ere_hp = re.search(r"Energia\s*Reativa\s*kWh\s*HP\s*kWh" + ITEM_NUMS, text, re.IGNORECASE)
+        if ere_hfp:
+            add_item("Energia Reativa Fora Ponta", *ere_hfp.groups())
+        if ere_hp:
+            add_item("Energia Reativa Ponta", *ere_hp.groups())
+        if not (ere_hfp or ere_hp):
+            # Layout sem posto tarifário explícito: mantém a leitura genérica
+            energia_reativa_match = re.search(r"Energia\s*Reativa[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)
+            if energia_reativa_match:
+                add_item("Energia Reativa", energia_reativa_match.group(1), energia_reativa_match.group(2), energia_reativa_match.group(3))
+
+        # 6a. Demanda Reativa Excedente (DRE), por posto tarifário
+        dre_hfp = re.search(r"Demanda\s*Reativa\s*kW\s*" + HFP + r"\s*kW" + ITEM_NUMS, text, re.IGNORECASE)
+        dre_hp = re.search(r"Demanda\s*Reativa\s*kW\s*HP\s*kW" + ITEM_NUMS, text, re.IGNORECASE)
+        if dre_hfp:
+            add_item("Demanda Reativa Excedente Fora Ponta", *dre_hfp.groups())
+        if dre_hp:
+            add_item("Demanda Reativa Excedente Ponta", *dre_hp.groups())
 
         # 6.b Custo de Disponibilidade
         custo_disp_match = re.search(r"Custo\s*de\s*Disponibilidade[\s\w/-]*?(\d+[\d.,]*)\s+([\d.,]+)\s+([\d.,]+,\d{2})(?!\d)", text, re.IGNORECASE)

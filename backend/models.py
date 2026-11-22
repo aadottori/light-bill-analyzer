@@ -40,7 +40,15 @@ class Bill(Base):
     imported_at = Column(String, nullable=True)
     imported_by = Column(String, nullable=True)
     original_file_name = Column(String, nullable=True)
-    
+
+    # Modalidade tarifária (Verde/Azul) e demandas em kW. Na Verde (demanda única)
+    # só os campos sem "_peak" são preenchidos; na Azul, eles guardam o fora de ponta.
+    tariff_modality = Column(String, nullable=True)
+    contracted_demand_kw = Column(Numeric(12, 2), nullable=True)
+    contracted_demand_peak_kw = Column(Numeric(12, 2), nullable=True)
+    measured_demand_kw = Column(Numeric(12, 2), nullable=True)
+    measured_demand_peak_kw = Column(Numeric(12, 2), nullable=True)
+
     unit = relationship("Unit", back_populates="bills")
     items = relationship("BillItem", back_populates="bill", cascade="all, delete-orphan")
 
@@ -74,8 +82,31 @@ class BillCreate(BaseModel):
     total_amount: Optional[str] = None
     unit_id: Optional[int] = None
     original_file_name: Optional[str] = None
+    tariff_modality: Optional[str] = None
+    contracted_demand_kw: Optional[str] = None
+    contracted_demand_peak_kw: Optional[str] = None
+    measured_demand_kw: Optional[str] = None
+    measured_demand_peak_kw: Optional[str] = None
     items: List[BillItemCreate] = []
+
+# Campos de demanda/modalidade do Bill, compartilhados por rotas e migração
+BILL_DEMAND_FIELDS = [
+    "contracted_demand_kw",
+    "contracted_demand_peak_kw",
+    "measured_demand_kw",
+    "measured_demand_peak_kw",
+]
 
 class UnitCreate(BaseModel):
     name: str
     installation_code: str
+
+class AiCompareRequest(BaseModel):
+    file_path: Optional[str] = None
+    original_file_name: Optional[str] = None
+    api_key: Optional[str] = None
+    model_name: Optional[str] = None
+
+class AiConfigInput(BaseModel):
+    api_key: str
+
